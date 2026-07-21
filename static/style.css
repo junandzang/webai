@@ -665,38 +665,70 @@ button:disabled:hover {
   .hero-right { display: none; }
 }
 
+/* ===== 대시보드: 심각도 총합 카드 ===== */
+.sev-stats { margin-top: -4px; }
+.stat-label .sev-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+.sev-dot.sev-critical { background: var(--down); }
+.sev-dot.sev-high { background: #ea580c; }
+.sev-dot.sev-medium { background: var(--warn); }
+.sev-dot.sev-low { background: #06b6d4; }
+.sev-critical-text { color: var(--down); }
+.sev-high-text { color: #ea580c; }
+.sev-medium-text { color: var(--warn); }
+.sev-low-text { color: #0891b2; }
+
 /* ===== 보안검사: 서버 카드 푸터 ===== */
 .card-scan {
   display: flex;
+  flex-direction: column;
   align-items: center;
   gap: 8px;
   margin-top: 12px;
   padding-top: 11px;
   border-top: 1px dashed var(--line);
 }
-.scan-btn {
-  padding: 7px 12px;
-  font-size: 12.5px;
+.scan-actions { display: flex; gap: 8px; }
+.icon-scan {
+  width: 34px;
+  height: 30px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  border: 1px solid #cfe0fd;
   background: var(--accent-soft);
   color: var(--accent-dark);
-  border: 1px solid #cfe0fd;
-}
-.scan-btn:hover:not(:disabled) { background: #dbe8fe; }
-.scan-report {
-  font-size: 12.5px;
-  color: var(--muted);
+  cursor: pointer;
   text-decoration: none;
-  padding: 6px 4px;
+  transition: background 0.13s, opacity 0.13s;
 }
-.scan-report:hover { color: var(--accent-dark); text-decoration: underline; }
+.icon-scan:hover:not(:disabled) { background: #dbe8fe; }
+.scan-report {
+  border-color: var(--line);
+  background: #fff;
+  color: var(--muted);
+}
+.scan-report:hover { background: #f3f5f9; color: var(--accent-dark); }
+.scan-btn.loading { opacity: 0.55; }
+.scan-btn.loading svg { animation: scan-pulse 1s ease-in-out infinite; }
+@keyframes scan-pulse { 50% { opacity: 0.3; } }
 .scan-state {
-  margin-left: auto;
   font-size: 11.5px;
   font-weight: 600;
   padding: 2px 8px;
   border-radius: 20px;
   white-space: nowrap;
+  min-height: 18px;
 }
+.scan-state:empty { padding: 0; min-height: 0; }
 .scan-state.running { color: var(--accent-dark); background: var(--accent-soft); }
 .scan-state.sev-ok { color: #047857; background: #ecfdf5; }
 .scan-state.sev-low { color: #0e7490; background: #ecfeff; }

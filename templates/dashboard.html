@@ -52,6 +52,25 @@
     </div>
   </section>
 
+  <section class="stats sev-stats">
+    <div class="stat">
+      <p class="stat-label">심각 <span class="sev-dot sev-critical"></span></p>
+      <p class="stat-value sev-critical-text">{{ sev_totals.crit }}</p>
+    </div>
+    <div class="stat">
+      <p class="stat-label">높음 <span class="sev-dot sev-high"></span></p>
+      <p class="stat-value sev-high-text">{{ sev_totals.high }}</p>
+    </div>
+    <div class="stat">
+      <p class="stat-label">보통 <span class="sev-dot sev-medium"></span></p>
+      <p class="stat-value sev-medium-text">{{ sev_totals.med }}</p>
+    </div>
+    <div class="stat">
+      <p class="stat-label">낮음 <span class="sev-dot sev-low"></span></p>
+      <p class="stat-value sev-low-text">{{ sev_totals.low }}</p>
+    </div>
+  </section>
+
   <section class="panel">
     <div class="panel-head">
       <h2>{{ selected or '서버' }} 목록</h2>
@@ -110,8 +129,28 @@
         </dl>
 
         <div class="card-scan">
-          <button type="button" class="scan-btn" data-id="{{ s.id }}">보안검사</button>
-          <a class="scan-report" href="/servers/{{ s.id }}">리포트</a>
+          <div class="scan-actions">
+            <button type="button" class="icon-scan scan-btn" data-id="{{ s.id }}"
+                    title="보안검사" aria-label="보안검사">
+              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+                <path d="M12 3l7 3v5c0 4.4-3 7.7-7 9-4-1.3-7-4.6-7-9V6l7-3z"
+                      fill="none" stroke="currentColor" stroke-width="1.7"
+                      stroke-linejoin="round"/>
+                <path d="M9 12l2 2 4-4" fill="none" stroke="currentColor"
+                      stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+            <a class="icon-scan scan-report" href="/servers/{{ s.id }}"
+               title="리포트" aria-label="리포트">
+              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+                <path d="M7 3h7l4 4v14a0 0 0 0 1 0 0H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"
+                      fill="none" stroke="currentColor" stroke-width="1.7"
+                      stroke-linejoin="round"/>
+                <path d="M14 3v4h4M9 12h6M9 16h6" fill="none" stroke="currentColor"
+                      stroke-width="1.7" stroke-linecap="round"/>
+              </svg>
+            </a>
+          </div>
           <span class="scan-state" data-id="{{ s.id }}"></span>
         </div>
       </article>
@@ -345,12 +384,17 @@
       const res = await fetch(`/api/servers/${id}/scan/status`);
       const data = await res.json();
       renderScanState(el, data);
+      const btn = document.querySelector(`.scan-btn[data-id="${id}"]`);
       if (data.status === 'queued' || data.status === 'running') {
+        if (btn) { btn.disabled = true; btn.classList.add('loading'); }
         pollTimers[id] = setTimeout(() => pollScan(id), 2000);
       } else {
         delete pollTimers[id];
-        const btn = document.querySelector(`.scan-btn[data-id="${id}"]`);
-        if (btn) { btn.disabled = false; btn.textContent = '재검사'; }
+        if (btn) {
+          btn.disabled = false;
+          btn.classList.remove('loading');
+          btn.title = '재검사';
+        }
       }
     } catch (err) {
       el.textContent = '';
@@ -361,7 +405,7 @@
     btn.addEventListener('click', async () => {
       const id = btn.dataset.id;
       btn.disabled = true;
-      btn.textContent = '시작 중…';
+      btn.classList.add('loading');
       const el = document.querySelector(`.scan-state[data-id="${id}"]`);
       try {
         const res = await fetch(`/api/servers/${id}/scan`, { method: 'POST' });
@@ -369,7 +413,7 @@
         if (!data.ok) {
           el.className = 'scan-state sev-high';
           el.textContent = data.message || '시작 실패';
-          btn.disabled = false; btn.textContent = '보안검사';
+          btn.disabled = false; btn.classList.remove('loading');
           return;
         }
         el.className = 'scan-state running';
@@ -377,7 +421,7 @@
         pollScan(id);
       } catch (err) {
         el.textContent = '요청 실패';
-        btn.disabled = false; btn.textContent = '보안검사';
+        btn.disabled = false; btn.classList.remove('loading');
       }
     });
   });

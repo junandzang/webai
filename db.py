@@ -376,6 +376,28 @@ def get_scan(scan_id: int):
             return cur.fetchone()
 
 
+def severity_totals():
+    """서버별 최신 완료 스캔의 심각도 합계. 대시보드 요약에 사용한다."""
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT COALESCE(SUM(s.crit),0) AS crit,
+                       COALESCE(SUM(s.high),0) AS high,
+                       COALESCE(SUM(s.med),0)  AS med,
+                       COALESCE(SUM(s.low),0)  AS low
+                FROM scans s
+                JOIN (
+                    SELECT server_id, MAX(id) AS mid
+                    FROM scans WHERE status = 'done'
+                    GROUP BY server_id
+                ) t ON s.id = t.mid
+                """
+            )
+            row = cur.fetchone()
+    return {k: int(row[k] or 0) for k in ("crit", "high", "med", "low")}
+
+
 def get_scan_checks(scan_id: int):
     """스캔의 체크리스트 항목을 심각도 높은 순으로 반환한다."""
     with get_conn() as conn:

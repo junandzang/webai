@@ -29,6 +29,7 @@ from db import (
     list_groups,
     list_servers,
     rename_group,
+    severity_totals,
     status_summary,
     update_password,
     update_server,
@@ -130,6 +131,7 @@ def dashboard(request: Request, group: str = ""):
             "selected_group": selected_group,
             "servers": servers,
             "summary": status_summary(),
+            "sev_totals": severity_totals(),
             "status_labels": SERVER_STATUS,
         },
     )
