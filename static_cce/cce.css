@@ -100,8 +100,14 @@ body.cce-login {
   background: #f6f7f9; border: 1px solid var(--line); border-radius: 7px; color: var(--muted);
 }
 .panel-search input { border: none; background: none; outline: none; width: 100%; font-size: 12.5px; }
-.group-root { padding: 8px 14px; font-size: 12.5px; display: flex; justify-content: space-between; color: #555; }
+.group-root { padding: 8px 14px; margin-top: 6px; font-size: 12.5px; display: flex; align-items: center; justify-content: space-between; color: #555; font-weight: 700; }
+.group-add {
+  width: 22px; height: 22px; line-height: 1; padding: 0; border: 1px solid var(--line);
+  border-radius: 6px; background: #fff; color: #777; cursor: pointer; font-size: 15px;
+}
+.group-add:hover { background: #fdeef0; border-color: #f0c2ca; color: var(--crimson); }
 .group-list { list-style: none; margin: 0; padding: 0; flex: 1; overflow-y: auto; }
+.group-row { position: relative; }
 .group-item {
   display: flex; align-items: center; gap: 6px; padding: 9px 14px 9px 20px; text-decoration: none;
   font-size: 12.5px; color: #3d434b;
@@ -109,7 +115,54 @@ body.cce-login {
 .group-item:hover { background: #f6f7f9; }
 .group-item.active { background: #fdeef0; color: var(--crimson); font-weight: 700; box-shadow: inset 3px 0 0 var(--crimson); }
 .group-item .tri { font-size: 9px; color: var(--muted); }
+.group-item .gname { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .group-item .gcount { margin-left: auto; font-size: 11px; color: var(--muted); }
+/* hover 시 이름수정·삭제 버튼 (개수 배지 자리) */
+.group-tools {
+  position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+  display: none; gap: 3px;
+}
+.group-row:hover .group-tools, .group-tools:focus-within { display: flex; }
+.group-row:hover .group-item .gcount { visibility: hidden; }
+.group-edit, .group-del {
+  width: 22px; height: 22px; padding: 0; border: 1px solid var(--line); border-radius: 5px;
+  background: #fff; color: #6b7079; cursor: pointer; font-size: 12px; line-height: 1;
+}
+.group-edit:hover { background: #fdeef0; border-color: #f0c2ca; color: var(--crimson); }
+.group-del:hover { background: #fdecef; border-color: #f5c2cb; color: var(--crimson); }
+
+/* 그룹 관리 모달 */
+.cce-modal-overlay {
+  display: none; position: fixed; inset: 0; background: rgba(20,10,15,.5);
+  align-items: center; justify-content: center; z-index: 1000; padding: 20px;
+}
+.cce-modal-overlay.open { display: flex; }
+.cce-modal {
+  width: 100%; max-width: 360px; background: #fff; border-radius: 12px; padding: 24px 24px;
+  box-shadow: 0 20px 50px rgba(0,0,0,.3); display: flex; flex-direction: column;
+}
+.cce-modal h2 { margin: 0 0 16px; font-size: 17px; text-align: center; }
+.cce-modal label { font-size: 12.5px; font-weight: 700; color: #4a4f57; margin-bottom: 6px; }
+.cce-modal input[type=text] {
+  padding: 10px 12px; margin-bottom: 14px; border: 1px solid #d4d7dd; border-radius: 8px;
+  font-size: 14px; outline: none;
+}
+.cce-modal input[type=text]:focus { border-color: var(--crimson); box-shadow: 0 0 0 3px rgba(165,24,47,.15); }
+.cce-confirm { text-align: center; font-size: 14px; margin: 0 0 6px; }
+.cce-hint { font-size: 12px; color: var(--muted); text-align: center; margin: 0 0 16px; line-height: 1.5; }
+.cce-modal-actions { display: flex; gap: 10px; margin-top: 4px; }
+.cce-modal-actions button { flex: 1; padding: 11px; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; border: none; }
+.btn-cancel { background: #f0f1f4; color: #444; }
+.btn-cancel:hover { background: #e5e7eb; }
+.btn-ok { background: var(--crimson); color: #fff; }
+.btn-ok:hover { background: var(--crimson-dark); }
+.btn-danger { background: var(--crimson); color: #fff; }
+.btn-danger:hover { background: var(--crimson-dark); }
+.btn-danger:disabled { background: #d9c3c7; cursor: not-allowed; }
+.cce-msg { display: none; padding: 9px 12px; border-radius: 8px; font-size: 12.5px; margin-bottom: 14px; }
+.cce-msg.show { display: block; }
+.cce-msg.ok { background: #eafaf0; border: 1px solid #b6e0c4; color: #1f8a4c; }
+.cce-msg.err { background: #fdecef; border: 1px solid #f5c2cb; color: var(--crimson); }
 .panel-foot { padding: 10px 14px; border-top: 1px solid var(--line2); font-size: 12px; color: var(--muted); }
 .panel-foot.pager { display: flex; align-items: center; gap: 10px; justify-content: center; }
 .panel-foot .page { min-width: 22px; text-align: center; border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; }

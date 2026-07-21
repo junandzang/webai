@@ -13,46 +13,39 @@
     <aside class="rail">
       <div class="rail-logo">
         <span class="rail-logo-mark">◈</span>
-        <span class="rail-logo-text">SolidStep<small>CCE</small></span>
+        <span class="rail-logo-text">운영관리</span>
       </div>
       <nav class="rail-nav">
         <a class="rail-item active" href="/assets" title="진단 실행">
           <svg viewBox="0 0 24 24" width="20" height="20"><path d="M8 5v14l11-7z" fill="currentColor"/></svg>
           <span>진단 실행</span>
         </a>
-        <a class="rail-item" href="/placeholder/수동 진단" title="수동 진단">
-          <svg viewBox="0 0 24 24" width="20" height="20"><path d="M4 20h4L18 10l-4-4L4 16v4z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
-          <span>수동 진단</span>
-        </a>
-        <a class="rail-item" href="/placeholder/통계" title="통계">
-          <svg viewBox="0 0 24 24" width="20" height="20"><path d="M5 20V10M12 20V4M19 20v-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-          <span>통계</span>
-        </a>
         <a class="rail-item" href="/placeholder/대시보드" title="대시보드">
           <svg viewBox="0 0 24 24" width="20" height="20"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z" fill="none" stroke="currentColor" stroke-width="1.7"/></svg>
           <span>대시보드</span>
         </a>
-        <a class="rail-item" href="/placeholder/다운로드" title="다운로드">
-          <svg viewBox="0 0 24 24" width="20" height="20"><path d="M12 4v10m0 0l-4-4m4 4l4-4M5 20h14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          <span>다운로드</span>
-        </a>
       </nav>
-      <a class="rail-more" href="/placeholder/추가 작업">추가 작업 ›</a>
     </aside>
 
     <!-- 자산 그룹 패널 -->
     <aside class="group-panel">
       <div class="panel-head"><span>▾ 자산 그룹 보기</span><span class="collapse">«</span></div>
-      <div class="panel-search"><span class="ic">⌕</span><input type="text" placeholder="그룹명 검색" disabled></div>
-      <div class="group-root">전체 자산 <span class="folder">🗀</span></div>
+      <div class="group-root">
+        <span>전체 자산</span>
+        <button type="button" class="group-add" id="groupAddBtn" title="자산 그룹 추가">+</button>
+      </div>
       <ul class="group-list">
         {% for g in groups %}
-        <li>
+        <li class="group-row">
           <a class="group-item {% if g.group_name == selected %}active{% endif %}"
              href="{{ base_link }}?group={{ g.group_name | urlencode }}">
-            <span class="tri">▸</span>{{ g.group_name }}
+            <span class="tri">▸</span><span class="gname">{{ g.group_name }}</span>
             <span class="gcount">{{ g.total }}</span>
           </a>
+          <span class="group-tools">
+            <button type="button" class="group-edit" data-group="{{ g.group_name }}" title="이름 수정">✎</button>
+            <button type="button" class="group-del" data-group="{{ g.group_name }}" data-total="{{ g.total }}" title="삭제">🗑</button>
+          </span>
         </li>
         {% endfor %}
       </ul>
@@ -62,7 +55,6 @@
     <!-- 진단 대상 목록 패널 -->
     <aside class="target-panel">
       <div class="panel-head"><span>▾ 진단 대상 목록</span><span class="collapse">«</span></div>
-      <div class="panel-search"><span class="ic">⌕</span><input type="text" placeholder="진단 대상 검색" disabled></div>
       <div class="target-count"><input type="checkbox" disabled> 진단 대상 <b>{{ target_count }}</b></div>
       <ul class="target-list">
         {% for t in targets %}
@@ -111,6 +103,123 @@
     <span class="sb-item">사용자 그룹 <b>{{ group_count }}</b></span>
     <span class="sb-ver">SolidStep CCE</span>
   </footer>
+
+  <!-- 자산 그룹 추가 -->
+  <div class="cce-modal-overlay" id="gAddModal">
+    <div class="cce-modal">
+      <h2>자산 그룹 추가</h2>
+      <div class="cce-msg" id="gAddMsg"></div>
+      <form id="gAddForm" autocomplete="off">
+        <label for="ga_name">그룹명</label>
+        <input type="text" id="ga_name" name="name" maxlength="50" placeholder="예: 운영서버">
+        <div class="cce-modal-actions">
+          <button type="button" class="btn-cancel" data-close>취소</button>
+          <button type="submit" class="btn-ok">추가</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 자산 그룹 이름 수정 -->
+  <div class="cce-modal-overlay" id="gEditModal">
+    <div class="cce-modal">
+      <h2>자산 그룹 이름 수정</h2>
+      <div class="cce-msg" id="gEditMsg"></div>
+      <form id="gEditForm" autocomplete="off">
+        <input type="hidden" name="old_name" id="ge_old">
+        <label for="ge_new">그룹명</label>
+        <input type="text" id="ge_new" name="new_name" maxlength="50">
+        <div class="cce-modal-actions">
+          <button type="button" class="btn-cancel" data-close>취소</button>
+          <button type="submit" class="btn-ok">저장</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 자산 그룹 삭제 -->
+  <div class="cce-modal-overlay" id="gDelModal">
+    <div class="cce-modal">
+      <h2>자산 그룹 삭제</h2>
+      <div class="cce-msg" id="gDelMsg"></div>
+      <p class="cce-confirm"><strong id="gd_name"></strong> 그룹을 삭제할까요?</p>
+      <p class="cce-hint" id="gd_hint"></p>
+      <div class="cce-modal-actions">
+        <button type="button" class="btn-cancel" data-close>취소</button>
+        <button type="button" class="btn-danger" id="gd_confirm">삭제</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // 그룹명은 data 속성으로 전달 (인라인 onclick은 따옴표에서 깨진다)
+    function openModal(id) { document.getElementById(id).classList.add('open'); }
+    function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+    document.querySelectorAll('.cce-modal-overlay').forEach(ov => {
+      ov.addEventListener('click', e => { if (e.target === ov) ov.classList.remove('open'); });
+      ov.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => ov.classList.remove('open')));
+    });
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') document.querySelectorAll('.cce-modal-overlay.open').forEach(o => o.classList.remove('open'));
+    });
+
+    function setMsg(el, text, ok) { el.textContent = text; el.className = 'cce-msg ' + (ok ? 'ok' : 'err') + ' show'; }
+
+    /* 그룹 추가 */
+    const gAddForm = document.getElementById('gAddForm');
+    document.getElementById('groupAddBtn').addEventListener('click', () => {
+      gAddForm.reset(); document.getElementById('gAddMsg').className = 'cce-msg';
+      openModal('gAddModal'); gAddForm.name.focus();
+    });
+    gAddForm.addEventListener('submit', async e => {
+      e.preventDefault();
+      const res = await fetch('/api/groups', { method: 'POST', body: new URLSearchParams(new FormData(gAddForm)) });
+      const j = await res.json();
+      setMsg(document.getElementById('gAddMsg'), j.message, j.ok);
+      if (j.ok) setTimeout(() => location.href = '/assets?group=' + encodeURIComponent(gAddForm.name.value.trim()), 600);
+    });
+
+    /* 그룹 이름 수정 */
+    const gEditForm = document.getElementById('gEditForm');
+    document.querySelectorAll('.group-edit').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.getElementById('gEditMsg').className = 'cce-msg';
+        gEditForm.old_name.value = btn.dataset.group;
+        gEditForm.new_name.value = btn.dataset.group;
+        openModal('gEditModal'); gEditForm.new_name.focus(); gEditForm.new_name.select();
+      });
+    });
+    gEditForm.addEventListener('submit', async e => {
+      e.preventDefault();
+      const res = await fetch('/api/groups/rename', { method: 'POST', body: new URLSearchParams(new FormData(gEditForm)) });
+      const j = await res.json();
+      setMsg(document.getElementById('gEditMsg'), j.message, j.ok);
+      if (j.ok) setTimeout(() => location.href = '/assets?group=' + encodeURIComponent(gEditForm.new_name.value.trim()), 600);
+    });
+
+    /* 그룹 삭제 */
+    let delGroup = null;
+    const gdConfirm = document.getElementById('gd_confirm');
+    document.querySelectorAll('.group-del').forEach(btn => {
+      btn.addEventListener('click', () => {
+        delGroup = btn.dataset.group;
+        document.getElementById('gDelMsg').className = 'cce-msg';
+        document.getElementById('gd_name').textContent = delGroup;
+        const empty = Number(btn.dataset.total) === 0;
+        document.getElementById('gd_hint').textContent = empty
+          ? '이 그룹에는 자산이 없습니다.'
+          : `자산이 ${btn.dataset.total}대 남아 있어 삭제할 수 없습니다. 먼저 자산을 옮기거나 삭제하세요.`;
+        gdConfirm.disabled = !empty;
+        openModal('gDelModal');
+      });
+    });
+    gdConfirm.addEventListener('click', async () => {
+      const res = await fetch('/api/groups/delete', { method: 'POST', body: new URLSearchParams({ name: delGroup }) });
+      const j = await res.json();
+      setMsg(document.getElementById('gDelMsg'), j.message, j.ok);
+      if (j.ok) setTimeout(() => location.href = '/assets', 600);
+    });
+  </script>
 
   {% block scripts %}{% endblock %}
 </body>

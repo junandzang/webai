@@ -282,12 +282,16 @@ def run_scan(scan_id, server_id, ip):
             if c["result"] in ("fail", "warn"):
                 counts[c["severity"]] += 1
 
+        # 접근 불가한 대상은 점수를 매기지 않는다(미진단 표시). 점검이 안 됐는데
+        # 취약이 0건이라고 100점으로 보이면 오해를 준다.
+        score = db.compute_score(checks) if scan_result.get("reachable") else None
+
         db.set_scan_done(
             scan_id,
             os_detected=scan_result.get("os", ""),
             scan_source=source,
             counts=counts,
-            score=db.compute_score(checks),
+            score=score,
         )
     except subprocess.TimeoutExpired:
         db.set_scan_error(scan_id, "스캔이 시간 초과되었습니다.")

@@ -20,6 +20,7 @@ import scanner
 
 BASE_DIR = Path(__file__).resolve().parent
 SESSION_EXPIRED = "세션이 만료되었습니다. 다시 로그인해주세요."
+GROUP_NAME_MAX = 50
 
 # 이미지에 맞춰 정적으로 채우는 표시값 (우리 데이터에 없는 항목)
 DIAG_TEMPLATE = "SKBB_2026"
@@ -240,6 +241,60 @@ def api_scan_status(request: Request, server_id: int):
         "counts": {"critical": scan["crit"], "high": scan["high"],
                    "med": scan["med"], "low": scan["low"]},
     })
+
+
+# ===== 자산 그룹 관리 (기존 db 함수 재사용) =====
+
+
+def _validate_group_name(name):
+    if not name:
+        return "그룹명을 입력해주세요."
+    if len(name) > GROUP_NAME_MAX:
+        return f"그룹명은 {GROUP_NAME_MAX}자 이하여야 합니다."
+    return None
+
+
+@app.post("/api/groups")
+def api_create_group(request: Request, name: str = Form(default="")):
+    if not _logged_in(request):
+        return JSONResponse({"ok": False, "message": SESSION_EXPIRED}, status_code=401)
+    name = name.strip()
+    error = _validate_group_name(name)
+    if error:
+        return JSONResponse({"ok": False, "message": error}, status_code=400)
+    ok, message = db.create_group(name)
+    return JSONResponse({"ok": ok, "message": message}, status_code=200 if ok else 400)
+
+
+@app.post("/api/groups/rename")
+def api_rename_group(request: Request, old_name: str = Form(default=""),
+                     new_name: str = Form(default="")):
+    if not _logged_in(request):
+        return JSONResponse({"ok": False, "message": SESSION_EXPIRED}, status_code=401)
+    old_name, new_name = old_name.strip(), new_name.strip()
+    error = _validate_group_name(new_name) or _validate_group_name(old_name)
+    if error:
+        return JSONResponse({"ok": False, "message": error}, status_code=400)
+    if old_name == new_name:
+        return JSONResponse({"ok": False, "message": "기존 그룹명과 동일합니다."},
+                            status_code=400)
+    ok, message = db.rename_group(old_name, new_name)
+    return JSONResponse({"ok": ok, "message": message}, status_code=200 if ok else 404)
+
+
+@app.post("/api/groups/delete")
+def api_delete_group(request: Request, name: str = Form(default="")):
+    if not _logged_in(request):
+        return JSONResponse({"ok": False, "message": SESSION_EXPIRED}, status_code=401)
+    name = name.strip()
+    if not name:
+        return JSONResponse({"ok": False, "message": "그룹명을 입력해주세요."},
+                            status_code=400)
+    ok, message = db.delete_group(name)
+    if ok:
+        return JSONResponse({"ok": True, "message": message})
+    status = 404 if "존재하지 않는" in message else 400
+    return JSONResponse({"ok": False, "message": message}, status_code=status)
 
 
 # ===== 준비 중 (미구현 탭) =====
