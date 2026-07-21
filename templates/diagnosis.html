@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+
+{% block title %}진단 실행{% endblock %}
+{% block page_title %}진단 실행{% endblock %}
+
+{% block content %}
+<div class="diag-wrap">
+
+  <!-- 왼쪽: 진단 대상 선택 -->
+  <section class="diag-targets">
+    <div class="diag-head">
+      <label class="diag-all">
+        <input type="checkbox" id="selectAll">
+        진단 대상 <b id="targetTotal">{{ assets | length }}</b>
+      </label>
+      <button type="button" class="primary-btn" id="scanSelected">
+        <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+          <path d="M12 3l7 3v5c0 4.4-3 7.7-7 9-4-1.3-7-4.6-7-9V6l7-3z" fill="none"
+                stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+          <path d="M9 12l2 2 4-4" fill="none" stroke="currentColor" stroke-width="1.8"
+                stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        검사<span id="selBadge" class="sel-badge" hidden></span>
+      </button>
+    </div>
+    <ul class="diag-target-list">
+      {% for a in assets %}
+      <li class="dt-row">
+        <label class="dt-label">
+          <input type="checkbox" class="tchk" value="{{ a.id }}">
+          <span class="dt-name">{{ a.name }}</span>
+          <span class="dt-ip">{{ a.ip or '-' }}</span>
+        </label>
+      </li>
+      {% else %}
+      <li class="dt-empty">등록된 서버가 없습니다.</li>
+      {% endfor %}
+    </ul>
+  </section>
+
+  <!-- 오른쪽: 자산 정보 -->
+  <section class="diag-assets">
+    <div class="diag-assets-head">자산 정보</div>
+    <div class="diag-asset-list">
+      {% for a in assets %}
+      <article class="diag-asset" data-id="{{ a.id }}">
+        <div class="da-score score-{{ a.score_color }}">
+          {{ a.score if a.score is not none else '미진단' }}
+        </div>
+        <div class="da-main">
+          <div class="da-name">{{ a.name }}</div>
+          <div class="da-sub">
+            <span class="da-status status-{{ a.status }}">{{ status_labels[a.status] }}</span>
+            {{ a.ip or '-' }} · {{ (a.os or 'linux').split()[0] if a.os else 'linux' }}
+            {% if a.high or a.crit %}· <span class="da-risk">위험 {{ a.crit + a.high + a.med + a.low }}건</span>{% endif %}
+          </div>
+        </div>
+        <span class="scan-state" data-id="{{ a.id }}"></span>
+        <a class="da-report" href="/servers/{{ a.id }}">리포트</a>
+      </article>
+      {% else %}
+      <div class="empty">표시할 자산이 없습니다.</div>
+      {% endfor %}
+    </div>
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const SCORE_COLOR = (s) => s==null?'none': s>=90?'good': s>=80?'fair': s>=60?'warn':'bad';
+
+  /* 전체 선택 */
+  const selectAll = document.getElementById('selectAll');
+  const checks = [...document.querySelectorAll('.tchk')];
+  const selBadge = document.getElementById('selBadge');
+
+  function refreshBadge() {
+    const n = checks.filter(c => c.checked).length;
+    if (n > 0) { selBadge.hidden = false; selBadge.textContent = n; }
+    else selBadge.hidden = true;
+    selectAll.checked = n > 0 && n === checks.length;
+    selectAll.indeterminate = n > 0 && n < checks.length;
+  }
+  selectAll.addEventListener('change', () => {
+    checks.forEach(c => c.checked = selectAll.checked);
+    refreshBadge();
+  });
+  checks.forEach(c => c.addEventListener('change', refreshBadge));
+
+  /* 카드 상태 렌더 */
+  function renderState(el, data) {
+    if (!data || data.status === 'none') { el.textContent=''; el.className='scan-state'; return; }
+    if (data.status === 'queued' || data.status === 'running') {
+      el.className='scan-state running'; el.textContent='검사 중…'; return;
+    }
+    if (data.status === 'error') { el.className='scan-state err'; el.textContent='실패'; return; }
+    el.className='scan-state done'; el.textContent='완료';
+    const card = el.closest('.diag-asset');
+    const box = card ? card.querySelector('.da-score') : null;
+    if (box && data.score != null) { box.textContent = data.score; box.className = 'da-score score-'+SCORE_COLOR(data.score); }
+    else if (box && data.score == null) { box.textContent = '미진단'; box.className = 'da-score score-none'; }
+  }
+  async function poll(id) {
+    const el = document.querySelector(`.scan-state[data-id="${id}"]`);
+    if (!el) return;
+    try {
+      const d = await (await fetch(`/api/servers/${id}/scan/status`)).json();
+      renderState(el, d);
+      if (d.status === 'queued' || d.status === 'running') setTimeout(()=>poll(id), 2500);
+    } catch(e) {}
+  }
+
+  /* 선택 서버 일괄 검사 */
+  const scanBtn = document.getElementById('scanSelected');
+  scanBtn.addEventListener('click', async () => {
+    const ids = checks.filter(c => c.checked).map(c => c.value);
+    if (!ids.length) { alert('진단할 서버를 선택하세요.'); return; }
+    scanBtn.disabled = true;
+    try {
+      const res = await fetch('/api/scan/bulk', { method:'POST', body:new URLSearchParams({server_ids: ids.join(',')}) });
+      const d = await res.json();
+      // 시작된 서버 카드 상태를 검사중으로 표시하고 폴링
+      (d.started || ids.map(Number)).forEach(id => {
+        const el = document.querySelector(`.scan-state[data-id="${id}"]`);
+        if (el) { el.className='scan-state running'; el.textContent='검사 중…'; poll(id); }
+      });
+    } catch(e) { alert('요청 실패'); }
+    finally { scanBtn.disabled = false; }
+  });
+
+  /* 페이지 로드 시 진행 중 스캔 반영 */
+  document.querySelectorAll('.scan-state').forEach(el => poll(el.dataset.id));
+  refreshBadge();
+</script>
+{% endblock %}

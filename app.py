@@ -30,6 +30,7 @@ from db import (
     list_groups,
     list_servers,
     rename_group,
+    scans_overview,
     severity_totals,
     status_summary,
     update_password,
@@ -388,6 +389,84 @@ def api_scan_status(request: Request, server_id: int):
     if not request.session.get("username"):
         return JSONResponse({"ok": False, "message": SESSION_EXPIRED}, status_code=401)
     return JSONResponse(_scan_status_payload(latest_scan(server_id)))
+
+
+def _score_color(score):
+    if score is None:
+        return "none"
+    if score >= 90:
+        return "good"
+    if score >= 80:
+        return "fair"
+    if score >= 60:
+        return "warn"
+    return "bad"
+
+
+def _start_scan(server_id: int):
+    """서버 1대 진단을 시작한다. (성공여부, 사유) 반환. 백그라운드 실행."""
+    server = get_server(server_id)
+    if server is None:
+        return False, "없음"
+    ip = (server["ip"] or "").strip()
+    if not ip:
+        return False, "IP 없음"
+    current = latest_scan(server_id)
+    if current and current["status"] in ("queued", "running"):
+        return True, "진행 중"
+    scan_id = create_scan(server_id, ip)
+    threading.Thread(
+        target=scanner.run_scan, args=(scan_id, server_id, ip), daemon=True
+    ).start()
+    return True, "시작"
+
+
+@app.get("/diagnosis", response_class=HTMLResponse)
+def diagnosis(request: Request):
+    if not request.session.get("username"):
+        return RedirectResponse("/login", status_code=303)
+
+    rows = scans_overview()  # 전체 서버 + 최신 스캔 요약
+    for r in rows:
+        r["score_color"] = _score_color(r["score"])
+
+    return templates.TemplateResponse(
+        request=request,
+        name="diagnosis.html",
+        context={
+            "username": request.session["username"],
+            "groups": list_groups(),
+            "selected": "",
+            "active_page": "diagnosis",
+            "assets": rows,
+            "status_labels": SERVER_STATUS,
+        },
+    )
+
+
+@app.post("/api/scan/bulk")
+def api_scan_bulk(request: Request, server_ids: str = Form(default="")):
+    if not request.session.get("username"):
+        return JSONResponse({"ok": False, "message": SESSION_EXPIRED}, status_code=401)
+
+    ids = [int(x) for x in server_ids.split(",") if x.strip().isdigit()]
+    if not ids:
+        return JSONResponse(
+            {"ok": False, "message": "진단할 서버를 선택하세요."}, status_code=400
+        )
+
+    started, skipped = [], []
+    for sid in ids:
+        ok, _reason = _start_scan(sid)
+        (started if ok else skipped).append(sid)
+
+    return JSONResponse({
+        "ok": True,
+        "started": started,
+        "skipped": skipped,
+        "message": f"{len(started)}대 진단을 시작했습니다."
+                   + (f" ({len(skipped)}대는 IP 없음 등으로 제외)" if skipped else ""),
+    })
 
 
 @app.get("/servers/{server_id}", response_class=HTMLResponse)

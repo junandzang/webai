@@ -874,3 +874,66 @@ button:disabled:hover {
   white-space: pre-wrap;
   word-break: break-all;
 }
+
+/* ===== 진단 실행 페이지 ===== */
+.diag-wrap { display: grid; grid-template-columns: 300px 1fr; gap: 16px; align-items: start; }
+
+.diag-targets, .diag-assets {
+  background: var(--card); border: 1px solid var(--line); border-radius: 11px; overflow: hidden;
+}
+.diag-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 13px 16px; border-bottom: 1px solid var(--line);
+}
+.diag-all { display: flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 600; cursor: pointer; }
+.diag-all input { width: 16px; height: 16px; }
+.diag-all b { color: var(--accent); }
+.diag-head .primary-btn { padding: 8px 14px; font-size: 13px; }
+.sel-badge {
+  margin-left: 6px; background: rgba(255,255,255,.28); border-radius: 20px;
+  padding: 0 7px; font-size: 11.5px; font-weight: 700;
+}
+.diag-target-list { list-style: none; margin: 0; padding: 6px; max-height: 70vh; overflow-y: auto; }
+.dt-row { border-radius: 8px; }
+.dt-row:hover { background: #f6f8fb; }
+.dt-label { display: flex; align-items: center; gap: 9px; padding: 9px 10px; cursor: pointer; }
+.dt-label input { width: 15px; height: 15px; }
+.dt-name { font-size: 13px; font-weight: 600; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dt-ip { font-size: 11.5px; color: var(--muted); }
+.dt-empty { padding: 22px; text-align: center; color: var(--muted); font-size: 13px; }
+
+.diag-assets-head { padding: 13px 16px; border-bottom: 1px solid var(--line); font-weight: 700; font-size: 14px; }
+.diag-asset-list { padding: 10px; display: flex; flex-direction: column; gap: 9px; }
+.diag-asset {
+  display: flex; align-items: center; gap: 14px; padding: 11px 14px;
+  border: 1px solid var(--line); border-radius: 10px; background: #fdfdff;
+}
+.diag-asset:hover { box-shadow: 0 4px 12px rgba(31,41,55,.06); }
+.da-score {
+  min-width: 72px; padding: 10px; border-radius: 8px; text-align: center;
+  font-size: 18px; font-weight: 800;
+}
+.score-good { background: #dcf0e2; color: #1f8a4c; }
+.score-fair { background: #fdeccb; color: #d08a1a; }
+.score-warn { background: #f9ddc2; color: #d1701d; }
+.score-bad  { background: #f6d3d8; color: #c02a3e; }
+.score-none { background: #edeef1; color: #9aa0a8; font-size: 12.5px; }
+.da-main { flex: 1; min-width: 0; }
+.da-name { font-size: 14.5px; font-weight: 700; }
+.da-sub { margin-top: 4px; font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.da-status { font-weight: 700; font-size: 11px; border-radius: 4px; padding: 1px 7px; }
+.da-status.status-ok { color: #047857; background: #ecfdf5; }
+.da-status.status-check { color: #b45309; background: #fffbeb; }
+.da-status.status-down { color: #b91c1c; background: #fef2f2; }
+.da-risk { color: #c2410c; font-weight: 600; }
+.da-report {
+  font-size: 12.5px; color: var(--muted); text-decoration: none; padding: 6px 10px;
+  border: 1px solid var(--line); border-radius: 7px;
+}
+.da-report:hover { background: var(--accent-soft); color: var(--accent-dark); border-color: #cfe0fd; }
+.diag-asset .scan-state { font-size: 11.5px; font-weight: 700; min-width: 44px; text-align: right; }
+.diag-asset .scan-state.running { color: var(--accent-dark); }
+.diag-asset .scan-state.done { color: #047857; }
+.diag-asset .scan-state.err { color: #b91c1c; }
+
+@media (max-width: 860px) { .diag-wrap { grid-template-columns: 1fr; } }
