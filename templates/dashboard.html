@@ -108,6 +108,12 @@
           <div><dt>OS</dt><dd>{{ s.os or '-' }}</dd></div>
           <div><dt>용도</dt><dd>{{ s.role or '-' }}</dd></div>
         </dl>
+
+        <div class="card-scan">
+          <button type="button" class="scan-btn" data-id="{{ s.id }}">보안검사</button>
+          <a class="scan-report" href="/servers/{{ s.id }}">리포트</a>
+          <span class="scan-state" data-id="{{ s.id }}"></span>
+        </div>
       </article>
       {% endfor %}
     </div>
@@ -297,5 +303,86 @@
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') { closeServerModal(); closeDelModal(); }
   });
+
+  /* ===== 보안검사 ===== */
+  const SEV_LABEL = { critical: '심각', high: '높음', med: '보통', low: '낮음', info: '정보' };
+
+  function renderScanState(el, data) {
+    if (!data || data.status === 'none') { el.textContent = ''; return; }
+    if (data.status === 'queued' || data.status === 'running') {
+      el.className = 'scan-state running';
+      el.textContent = '스캔 중…';
+      return;
+    }
+    if (data.status === 'error') {
+      el.className = 'scan-state sev-high';
+      el.textContent = '검사 실패';
+      el.title = data.error_message || '';
+      return;
+    }
+    // done: 가장 높은 심각도를 배지로
+    const c = data.counts || {};
+    let worst = null;
+    for (const k of ['critical', 'high', 'med', 'low']) {
+      if (c[k] > 0) { worst = k; break; }
+    }
+    if (worst) {
+      el.className = 'scan-state sev-' + (worst === 'med' ? 'medium' : worst);
+      const total = (c.critical||0)+(c.high||0)+(c.med||0)+(c.low||0);
+      el.textContent = `${SEV_LABEL[worst]} · 위험 ${total}건`;
+    } else {
+      el.className = 'scan-state sev-ok';
+      el.textContent = '양호';
+    }
+  }
+
+  const pollTimers = {};
+
+  async function pollScan(id) {
+    const el = document.querySelector(`.scan-state[data-id="${id}"]`);
+    if (!el) return;
+    try {
+      const res = await fetch(`/api/servers/${id}/scan/status`);
+      const data = await res.json();
+      renderScanState(el, data);
+      if (data.status === 'queued' || data.status === 'running') {
+        pollTimers[id] = setTimeout(() => pollScan(id), 2000);
+      } else {
+        delete pollTimers[id];
+        const btn = document.querySelector(`.scan-btn[data-id="${id}"]`);
+        if (btn) { btn.disabled = false; btn.textContent = '재검사'; }
+      }
+    } catch (err) {
+      el.textContent = '';
+    }
+  }
+
+  document.querySelectorAll('.scan-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.id;
+      btn.disabled = true;
+      btn.textContent = '시작 중…';
+      const el = document.querySelector(`.scan-state[data-id="${id}"]`);
+      try {
+        const res = await fetch(`/api/servers/${id}/scan`, { method: 'POST' });
+        const data = await res.json();
+        if (!data.ok) {
+          el.className = 'scan-state sev-high';
+          el.textContent = data.message || '시작 실패';
+          btn.disabled = false; btn.textContent = '보안검사';
+          return;
+        }
+        el.className = 'scan-state running';
+        el.textContent = '스캔 중…';
+        pollScan(id);
+      } catch (err) {
+        el.textContent = '요청 실패';
+        btn.disabled = false; btn.textContent = '보안검사';
+      }
+    });
+  });
+
+  // 페이지 로드 시 각 서버의 최신 스캔 상태를 반영한다.
+  document.querySelectorAll('.scan-state').forEach((el) => pollScan(el.dataset.id));
 </script>
 {% endblock %}

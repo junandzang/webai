@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+
+{% block title %}보안검사 리포트 — {{ server.name }}{% endblock %}
+{% block page_title %}보안검사 리포트{% endblock %}
+
+{% block topbar_actions %}
+  <a class="primary-btn" href="/dashboard?group={{ server.group_name | urlencode }}">← 목록</a>
+{% endblock %}
+
+{% block content %}
+<section class="hero">
+  <div class="hero-head">
+    <span class="chip">{{ server.group_name }}</span>
+    <strong class="hero-title">{{ server.name }}</strong>
+    <span class="chip chip-soft">{{ server.ip or 'IP 없음' }}</span>
+  </div>
+  <p class="hero-sub">
+    OS {{ server.os or '미상' }} · 용도 {{ server.role or '-' }}
+  </p>
+</section>
+
+{% if not scan %}
+  <section class="panel">
+    <div class="empty">
+      <p>아직 보안검사를 실행하지 않았습니다.</p>
+      <button type="button" class="primary-btn" id="startScan"
+              data-id="{{ server.id }}">보안검사 시작</button>
+    </div>
+  </section>
+{% else %}
+  <section class="stats" id="summaryCards">
+    <div class="stat"><p class="stat-label">심각</p>
+      <p class="stat-value down">{{ scan.crit }}</p></div>
+    <div class="stat"><p class="stat-label">높음</p>
+      <p class="stat-value" style="color:#ea580c">{{ scan.high }}</p></div>
+    <div class="stat"><p class="stat-label">보통</p>
+      <p class="stat-value warn">{{ scan.med }}</p></div>
+    <div class="stat"><p class="stat-label">낮음</p>
+      <p class="stat-value" style="color:#0891b2">{{ scan.low }}</p></div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>검사 결과</h2>
+      <span class="panel-sub" id="scanMeta">
+        대상 {{ scan.target_ip }} ·
+        탐지 OS {{ scan.os_detected or '미상' }} ·
+        CVE 출처 {{ '실시간 NVD' if scan.scan_source == 'nvd' else '내장 규칙(오프라인)' }}
+      </span>
+      <button type="button" class="primary-btn" id="rescan"
+              data-id="{{ server.id }}" style="margin-left:auto">재검사</button>
+    </div>
+
+    <div id="scanBanner"></div>
+
+    {% if scan.status == 'error' %}
+      <div class="alert">검사 실패: {{ scan.error_message }}</div>
+    {% elif scan.status in ('queued', 'running') %}
+      <div class="scan-running-note">스캔이 진행 중입니다. 완료되면 자동으로 갱신됩니다…</div>
+    {% endif %}
+
+    {% for cat, items in grouped.items() %}
+    <div class="check-group">
+      <h3 class="check-cat">{{ category_label.get(cat, cat) }}
+        <span class="check-cat-count">{{ items | length }}</span></h3>
+      {% for c in items %}
+      <div class="check-row result-{{ c.result }} sev-{{ c.severity }}">
+        <div class="check-main">
+          <span class="sev-badge sev-{{ c.severity }}">{{ severity_label.get(c.severity, c.severity) }}</span>
+          <span class="check-title">{{ c.title }}</span>
+          <span class="result-tag result-{{ c.result }}">{{ result_label.get(c.result, c.result) }}</span>
+        </div>
+        {% if c.detail %}<p class="check-detail">{{ c.detail }}</p>{% endif %}
+        {% if c.cve_ids %}<p class="check-cve">관련 CVE: {{ c.cve_ids }}</p>{% endif %}
+        {% if c.remediation %}<p class="check-fix"><strong>조치</strong> {{ c.remediation }}</p>{% endif %}
+        {% if c.evidence %}<details class="check-evi"><summary>근거 보기</summary><pre>{{ c.evidence }}</pre></details>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </section>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const serverId = {{ server.id }};
+  const scanStatus = {{ (scan.status if scan else 'none') | tojson }};
+
+  async function startScan(id) {
+    const res = await fetch(`/api/servers/${id}/scan`, { method: 'POST' });
+    const data = await res.json();
+    return data;
+  }
+
+  // 진행 중이면 완료 시 페이지를 새로고침해 결과를 보여준다.
+  async function pollUntilDone(id) {
+    try {
+      const res = await fetch(`/api/servers/${id}/scan/status`);
+      const data = await res.json();
+      if (data.status === 'queued' || data.status === 'running') {
+        setTimeout(() => pollUntilDone(id), 2000);
+      } else {
+        location.reload();
+      }
+    } catch (e) {
+      setTimeout(() => pollUntilDone(id), 3000);
+    }
+  }
+
+  const startBtn = document.getElementById('startScan');
+  if (startBtn) {
+    startBtn.addEventListener('click', async () => {
+      startBtn.disabled = true;
+      startBtn.textContent = '스캔 중…';
+      const data = await startScan(startBtn.dataset.id);
+      if (data.ok) pollUntilDone(startBtn.dataset.id);
+      else { startBtn.disabled = false; startBtn.textContent = '보안검사 시작'; }
+    });
+  }
+
+  const rescanBtn = document.getElementById('rescan');
+  if (rescanBtn) {
+    rescanBtn.addEventListener('click', async () => {
+      rescanBtn.disabled = true;
+      rescanBtn.textContent = '스캔 중…';
+      const data = await startScan(rescanBtn.dataset.id);
+      if (data.ok) pollUntilDone(rescanBtn.dataset.id);
+      else { rescanBtn.disabled = false; rescanBtn.textContent = '재검사'; }
+    });
+  }
+
+  if (scanStatus === 'queued' || scanStatus === 'running') {
+    pollUntilDone(serverId);
+  }
+</script>
+{% endblock %}

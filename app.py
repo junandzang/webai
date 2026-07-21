@@ -3,6 +3,7 @@
 실행:  python -m uvicorn app:app --reload --port 8000
 """
 
+import threading
 from pathlib import Path
 
 from fastapi import FastAPI, Form, Request
@@ -12,13 +13,19 @@ from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
 import config
+import db
+import scanner
 from db import (
     SERVER_STATUS,
     create_group,
+    create_scan,
     create_server,
     delete_group,
     delete_server,
     get_operator,
+    get_scan_checks,
+    get_server,
+    latest_scan,
     list_groups,
     list_servers,
     rename_group,
@@ -27,6 +34,7 @@ from db import (
     update_server,
     verify_password,
 )
+from rules import CATEGORY_LABEL, RESULT_LABEL, SEVERITY_LABEL
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -315,3 +323,98 @@ def api_rename_group(
 
     ok, message = rename_group(old_name, new_name)
     return JSONResponse({"ok": ok, "message": message}, status_code=200 if ok else 404)
+
+
+# ===== 보안검사(스캔) =====
+
+
+def _scan_status_payload(scan):
+    """폴링 응답/템플릿에서 공통으로 쓰는 스캔 요약 dict."""
+    if not scan:
+        return {"status": "none"}
+    return {
+        "status": scan["status"],
+        "scan_id": scan["id"],
+        "target_ip": scan["target_ip"],
+        "os_detected": scan["os_detected"],
+        "scan_source": scan["scan_source"],
+        "error_message": scan["error_message"],
+        "counts": {
+            "critical": scan["crit"], "high": scan["high"], "med": scan["med"],
+            "low": scan["low"], "info": scan["info"],
+        },
+    }
+
+
+@app.post("/api/servers/{server_id}/scan")
+def api_start_scan(request: Request, server_id: int):
+    if not request.session.get("username"):
+        return JSONResponse({"ok": False, "message": SESSION_EXPIRED}, status_code=401)
+
+    server = get_server(server_id)
+    if server is None:
+        return JSONResponse(
+            {"ok": False, "message": "존재하지 않는 서버입니다."}, status_code=404
+        )
+    ip = (server["ip"] or "").strip()
+    if not ip:
+        return JSONResponse(
+            {"ok": False, "message": "이 서버에 IP가 없습니다. 먼저 IP를 입력하세요."},
+            status_code=400,
+        )
+
+    # 이미 진행 중인 스캔이 있으면 중복 실행하지 않는다.
+    current = latest_scan(server_id)
+    if current and current["status"] in ("queued", "running"):
+        return JSONResponse(
+            {"ok": True, "message": "이미 스캔이 진행 중입니다.", "scan_id": current["id"]}
+        )
+
+    scan_id = create_scan(server_id, ip)
+    # 백그라운드 스레드에서 실행 (요청은 즉시 반환)
+    threading.Thread(
+        target=scanner.run_scan, args=(scan_id, server_id, ip), daemon=True
+    ).start()
+    return JSONResponse(
+        {"ok": True, "message": "보안검사를 시작했습니다.", "scan_id": scan_id}
+    )
+
+
+@app.get("/api/servers/{server_id}/scan/status")
+def api_scan_status(request: Request, server_id: int):
+    if not request.session.get("username"):
+        return JSONResponse({"ok": False, "message": SESSION_EXPIRED}, status_code=401)
+    return JSONResponse(_scan_status_payload(latest_scan(server_id)))
+
+
+@app.get("/servers/{server_id}", response_class=HTMLResponse)
+def server_report(request: Request, server_id: int):
+    if not request.session.get("username"):
+        return RedirectResponse("/login", status_code=303)
+
+    server = get_server(server_id)
+    if server is None:
+        return RedirectResponse("/dashboard", status_code=303)
+
+    scan = latest_scan(server_id)
+    checks = get_scan_checks(scan["id"]) if scan else []
+    # 카테고리별로 묶어 화면에서 섹션으로 표시
+    grouped = {}
+    for c in checks:
+        grouped.setdefault(c["category"], []).append(c)
+
+    return templates.TemplateResponse(
+        request=request,
+        name="scan.html",
+        context={
+            "username": request.session["username"],
+            "groups": list_groups(),
+            "selected": server["group_name"],
+            "server": server,
+            "scan": scan,
+            "grouped": grouped,
+            "category_label": CATEGORY_LABEL,
+            "severity_label": SEVERITY_LABEL,
+            "result_label": RESULT_LABEL,
+        },
+    )

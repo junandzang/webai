@@ -274,3 +274,116 @@ def delete_server(server_id: int) -> bool:
         with conn.cursor() as cur:
             cur.execute("DELETE FROM servers WHERE id = %s", (server_id,))
             return cur.rowcount > 0
+
+
+def update_server_os(server_id: int, os_name: str):
+    """스캔으로 파악한 OS를 서버 레코드에 반영한다."""
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE servers SET os = %s WHERE id = %s", (os_name, server_id)
+            )
+
+
+# ===== 보안검사(스캔) =====
+
+
+def create_scan(server_id: int, target_ip: str) -> int:
+    """스캔 레코드를 만들고 scan_id를 반환한다."""
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO scans (server_id, target_ip, status) "
+                "VALUES (%s, %s, 'queued')",
+                (server_id, target_ip),
+            )
+            return cur.lastrowid
+
+
+def set_scan_running(scan_id: int):
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE scans SET status = 'running' WHERE id = %s", (scan_id,)
+            )
+
+
+def set_scan_error(scan_id: int, message: str):
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE scans SET status = 'error', error_message = %s, "
+                "finished_at = NOW() WHERE id = %s",
+                (message[:255], scan_id),
+            )
+
+
+def set_scan_done(scan_id: int, os_detected: str, scan_source: str, counts: dict):
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE scans SET status = 'done', os_detected = %s, "
+                "scan_source = %s, crit = %s, high = %s, med = %s, low = %s, "
+                "info = %s, finished_at = NOW() WHERE id = %s",
+                (
+                    os_detected[:120], scan_source,
+                    counts.get("critical", 0), counts.get("high", 0),
+                    counts.get("medium", 0), counts.get("low", 0),
+                    counts.get("info", 0), scan_id,
+                ),
+            )
+
+
+def add_check(scan_id: int, check: dict):
+    """체크리스트 항목 1건을 저장한다."""
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO scan_checks "
+                "(scan_id, category, title, severity, result, port, "
+                " detail, evidence, remediation, cve_ids) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                (
+                    scan_id, check["category"], check["title"][:200],
+                    check["severity"], check["result"], check.get("port"),
+                    check.get("detail", ""), check.get("evidence", ""),
+                    check.get("remediation", ""),
+                    ",".join(check.get("cve_ids", []))[:255],
+                ),
+            )
+
+
+def latest_scan(server_id: int):
+    """서버의 가장 최근 스캔 1건을 반환한다. 없으면 None.
+
+    'running' 상태인데 서버 재시작 등으로 방치된 오래된 스캔은
+    error로 간주해 표시한다(조회 시 상태 보정).
+    """
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT * FROM scans WHERE server_id = %s "
+                "ORDER BY id DESC LIMIT 1",
+                (server_id,),
+            )
+            return cur.fetchone()
+
+
+def get_scan(scan_id: int):
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT * FROM scans WHERE id = %s", (scan_id,))
+            return cur.fetchone()
+
+
+def get_scan_checks(scan_id: int):
+    """스캔의 체크리스트 항목을 심각도 높은 순으로 반환한다."""
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT * FROM scan_checks WHERE scan_id = %s "
+                "ORDER BY FIELD(severity,'critical','high','medium','low','info'), "
+                "         FIELD(result,'fail','warn','info','pass'), id",
+                (scan_id,),
+            )
+            return cur.fetchall()

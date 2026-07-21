@@ -58,6 +58,9 @@ python -m uvicorn app:app --reload --port 8000
 | POST | `/api/groups` | 빈 그룹 생성 (`name`) |
 | POST | `/api/groups/rename` | 그룹명 변경 (`old_name`, `new_name`) |
 | POST | `/api/groups/delete` | 그룹 삭제 (`name`) — 서버가 남아 있으면 400 |
+| POST | `/api/servers/{id}/scan` | 보안검사 시작 (백그라운드) → `{ok, scan_id}` |
+| GET  | `/api/servers/{id}/scan/status` | 최신 스캔 상태·심각도 카운트(폴링) |
+| GET  | `/servers/{id}` | 서버 상세 + 보안검사 리포트 페이지(HTML) |
 
 입력 필드: `group_name`, `name`, `ip`, `os_name`, `role`, `status`(`ok`/`check`/`down`).
 서버명은 UNIQUE라 중복 시 400과 함께 "이미 존재하는 서버명입니다."를 반환합니다.
@@ -65,20 +68,40 @@ python -m uvicorn app:app --reload --port 8000
 그룹명 변경은 해당 그룹 서버들의 `group_name`을 일괄 UPDATE 합니다.
 이미 있는 그룹명으로 바꾸면 **두 그룹이 합쳐집니다**.
 
+## 보안검사 (취약점 스캔)
+서버 카드의 **보안검사** 버튼 → 백그라운드로 nmap 스캔 → 리포트 페이지에 체크리스트로 표시.
+
+- **엔진**: nmap `-sT -sV -Pn --top-ports 200 + NSE`(관리자 권한 불필요). `scanner.py`가 XML을 파싱
+- **OS 파악**: 서비스 지문·배너로 OS를 추정해 `servers.os`를 자동 갱신
+- **점검 항목**(`rules.py`, 오프라인): 평문 인증(telnet/FTP/메일), 원격 관리 노출(SSH/RDP/VNC),
+  DB 노출(MySQL/PG/MSSQL/Mongo/Redis 등), 무인증 접근(익명 FTP·Redis/Mongo → 계정 탈취),
+  웹(HTTPS 미적용·약한 TLS·보안 헤더 누락), 지원종료(EOL) OS
+- **CVE**(`nvd.py`): NVD 실시간 조회를 시도하고, 사내 프록시로 막히면 오프라인 규칙 결과만으로 진행
+  (리포트에 `CVE 출처: 실시간 NVD | 내장 규칙(오프라인)` 표시)
+- **경계**: 노출 평가와 비파괴적 확인만 수행. **실제 비밀번호 시도·브루트포스·익스플로잇 없음.**
+  스캔 대상은 인벤토리에 등록된 서버 IP로 한정
+
+> **선행조건**: nmap이 설치돼 있어야 합니다. `.env`의 `NMAP_PATH`로 경로를 지정하거나 PATH에 두세요.
+
 ## 구성
 | 파일 | 설명 |
 |---|---|
 | `.env.example` | 환경변수 템플릿 (`.env`로 복사해 사용) |
-| `config.py` | `.env`에서 DB 접속정보·세션 시크릿·초기 계정을 읽어옴 |
-| `db.py` | DB 커넥션, 비밀번호 해시(bcrypt)/검증, 계정·서버 조회 및 CRUD |
+| `config.py` | `.env`에서 DB 접속정보·세션 시크릿·초기 계정·스캔 설정을 읽어옴 |
+| `db.py` | DB 커넥션, 비밀번호 해시(bcrypt)/검증, 계정·서버 CRUD, 스캔 저장 |
 | `init_db.py` | DB/테이블 생성, admin 및 샘플 서버 시드 (재실행 안전) |
-| `app.py` | FastAPI 라우트 (로그인/대시보드/서버 API/로그아웃) |
-| `templates/` | base.html(사이드바·상단바 셸), login.html, dashboard.html |
-| `static/style.css` | 스타일 (로그인 + 앱 셸 + 서버 카드) |
+| `app.py` | FastAPI 라우트 (로그인/대시보드/서버·그룹 API/보안검사/로그아웃) |
+| `scanner.py` | nmap 실행·XML 파싱·NVD 병합 오케스트레이터 |
+| `rules.py` | 오프라인 보안 점검 규칙 엔진 |
+| `nvd.py` | NVD CVE 실시간 조회(+오프라인 폴백) |
+| `templates/` | base.html(셸), login.html, dashboard.html, scan.html(리포트) |
+| `static/style.css` | 스타일 (로그인 + 앱 셸 + 서버 카드 + 스캔 리포트) |
 
 ## DB 테이블
 - `operators` : 운영자 계정 (`username`, `password_hash`)
 - `servers` : 서버 목록 (`group_name`, `name`, `ip`, `os`, `role`, `status`, `sort_order`)
+- `scans` : 보안검사 실행 이력 (`server_id`, `target_ip`, `status`, `os_detected`, 심각도 카운트)
+- `scan_checks` : 스캔별 체크리스트 항목 (`category`, `title`, `severity`, `result`, `detail`, `remediation`, `cve_ids`)
 - `server_groups` : 그룹 목록 (`name`, `sort_order`)
   - 사이드바 메뉴는 이 테이블 기준이라 **서버가 0대인 그룹도 유지**됩니다.
   - `servers.group_name`은 FK가 아닌 문자열이며, 서버 등록·수정 시 새 그룹명이 들어오면

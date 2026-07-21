@@ -93,14 +93,18 @@ def main():
                 """
             )
 
-            # 6) 샘플 서버 시드 (이미 있으면 건너뜀)
-            cur.executemany(
-                "INSERT IGNORE INTO servers "
-                "(group_name, name, ip, os, role, status) "
-                "VALUES (%s, %s, %s, %s, %s, %s)",
-                SAMPLE_SERVERS,
-            )
-            seeded = cur.rowcount
+            # 6) 샘플 서버 시드 — servers가 완전히 비어 있을 때(최초 설치)만 넣는다.
+            #    이후 재실행(스키마 추가 등)에서 사용자가 지운 샘플이 되살아나지 않도록.
+            cur.execute("SELECT COUNT(*) AS c FROM servers")
+            seeded = 0
+            if cur.fetchone()["c"] == 0:
+                cur.executemany(
+                    "INSERT IGNORE INTO servers "
+                    "(group_name, name, ip, os, role, status) "
+                    "VALUES (%s, %s, %s, %s, %s, %s)",
+                    SAMPLE_SERVERS,
+                )
+                seeded = cur.rowcount
 
             # 7) 서버가 쓰고 있는 그룹명을 레지스트리에 채운다.
             #    신규 설치(위 시드분)와 기존 설치(이미 있던 그룹) 모두 여기서 처리된다.
@@ -110,9 +114,48 @@ def main():
             )
             backfilled = cur.rowcount
 
+            # 8) 보안검사(스캔) 테이블
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS scans (
+                    id          INT AUTO_INCREMENT PRIMARY KEY,
+                    server_id   INT NOT NULL,
+                    target_ip   VARCHAR(45) NOT NULL,
+                    status      VARCHAR(20) NOT NULL DEFAULT 'queued',
+                    os_detected VARCHAR(120) DEFAULT '',
+                    scan_source VARCHAR(20)  DEFAULT '',
+                    crit INT DEFAULT 0, high INT DEFAULT 0, med INT DEFAULT 0,
+                    low  INT DEFAULT 0, info INT DEFAULT 0,
+                    error_message VARCHAR(255) DEFAULT '',
+                    started_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    finished_at TIMESTAMP NULL DEFAULT NULL,
+                    INDEX idx_server (server_id, id)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                """
+            )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS scan_checks (
+                    id          INT AUTO_INCREMENT PRIMARY KEY,
+                    scan_id     INT NOT NULL,
+                    category    VARCHAR(20) NOT NULL,
+                    title       VARCHAR(200) NOT NULL,
+                    severity    VARCHAR(12) NOT NULL,
+                    result      VARCHAR(8)  NOT NULL,
+                    port        INT NULL,
+                    detail      TEXT,
+                    evidence    TEXT,
+                    remediation TEXT,
+                    cve_ids     VARCHAR(255) DEFAULT '',
+                    INDEX idx_scan (scan_id)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                """
+            )
+
     print(
         f"[완료] 데이터베이스 '{config.DB_NAME}'에 "
-        "'operators', 'servers', 'server_groups' 테이블을 준비했습니다."
+        "'operators', 'servers', 'server_groups', 'scans', 'scan_checks' "
+        "테이블을 준비했습니다."
     )
     if backfilled:
         print(f"[완료] 서버 그룹 {backfilled}개를 그룹 목록에 등록했습니다.")

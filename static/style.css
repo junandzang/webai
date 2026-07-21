@@ -664,3 +664,132 @@ button:disabled:hover {
   .search input { width: 140px; }
   .hero-right { display: none; }
 }
+
+/* ===== 보안검사: 서버 카드 푸터 ===== */
+.card-scan {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 11px;
+  border-top: 1px dashed var(--line);
+}
+.scan-btn {
+  padding: 7px 12px;
+  font-size: 12.5px;
+  background: var(--accent-soft);
+  color: var(--accent-dark);
+  border: 1px solid #cfe0fd;
+}
+.scan-btn:hover:not(:disabled) { background: #dbe8fe; }
+.scan-report {
+  font-size: 12.5px;
+  color: var(--muted);
+  text-decoration: none;
+  padding: 6px 4px;
+}
+.scan-report:hover { color: var(--accent-dark); text-decoration: underline; }
+.scan-state {
+  margin-left: auto;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+.scan-state.running { color: var(--accent-dark); background: var(--accent-soft); }
+.scan-state.sev-ok { color: #047857; background: #ecfdf5; }
+.scan-state.sev-low { color: #0e7490; background: #ecfeff; }
+.scan-state.sev-medium { color: #b45309; background: #fffbeb; }
+.scan-state.sev-high { color: #c2410c; background: #fff7ed; }
+.scan-state.sev-critical { color: #b91c1c; background: #fef2f2; }
+
+/* ===== 보안검사: 리포트 체크리스트 ===== */
+.scan-running-note {
+  padding: 12px 14px;
+  background: var(--accent-soft);
+  color: var(--accent-dark);
+  border-radius: 8px;
+  font-size: 13.5px;
+  margin-bottom: 16px;
+}
+.check-group { margin-bottom: 22px; }
+.check-cat {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+  font-size: 14px;
+}
+.check-cat-count {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--muted);
+  background: #eef1f6;
+  border-radius: 20px;
+  padding: 1px 8px;
+}
+.check-row {
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--line);
+  border-radius: 9px;
+  padding: 12px 14px;
+  margin-bottom: 9px;
+  background: #fdfdff;
+}
+.check-row.result-pass { border-left-color: var(--ok); }
+.check-row.result-info { border-left-color: #94a3b8; }
+.check-row.sev-low.result-warn,
+.check-row.sev-low.result-fail { border-left-color: #06b6d4; }
+.check-row.sev-medium { border-left-color: var(--warn); }
+.check-row.sev-high { border-left-color: #ea580c; }
+.check-row.sev-critical { border-left-color: var(--down); }
+
+.check-main {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+}
+.check-title { font-weight: 600; font-size: 14px; }
+.sev-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 5px;
+  color: #fff;
+}
+.sev-badge.sev-info { background: #94a3b8; }
+.sev-badge.sev-low { background: #06b6d4; }
+.sev-badge.sev-medium { background: var(--warn); }
+.sev-badge.sev-high { background: #ea580c; }
+.sev-badge.sev-critical { background: var(--down); }
+.result-tag {
+  margin-left: auto;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 2px 9px;
+  border-radius: 20px;
+}
+.result-tag.result-fail { color: #b91c1c; background: #fef2f2; }
+.result-tag.result-warn { color: #b45309; background: #fffbeb; }
+.result-tag.result-pass { color: #047857; background: #ecfdf5; }
+.result-tag.result-info { color: #475569; background: #f1f5f9; }
+
+.check-detail { margin: 9px 0 0; font-size: 13px; color: #374151; line-height: 1.55; }
+.check-cve { margin: 6px 0 0; font-size: 12.5px; color: #b91c1c; font-weight: 600; }
+.check-fix { margin: 6px 0 0; font-size: 12.5px; color: #4b5563; line-height: 1.5; }
+.check-fix strong { color: var(--accent-dark); margin-right: 4px; }
+.check-evi { margin: 8px 0 0; }
+.check-evi summary { font-size: 12px; color: var(--muted); cursor: pointer; }
+.check-evi pre {
+  margin: 6px 0 0;
+  padding: 9px 11px;
+  background: #f8fafc;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  font-size: 11.5px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
