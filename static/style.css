@@ -886,7 +886,7 @@ button:disabled:hover {
   padding: 13px 16px; border-bottom: 1px solid var(--line);
 }
 .diag-all { display: flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 600; cursor: pointer; }
-.diag-all input { width: 16px; height: 16px; }
+.diag-all input { width: 16px; height: 16px; flex: 0 0 16px; margin: 0; }
 .diag-all b { color: var(--accent); }
 .diag-head .primary-btn { padding: 8px 14px; font-size: 13px; }
 .sel-badge {

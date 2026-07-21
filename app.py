@@ -343,6 +343,7 @@ def _scan_status_payload(scan):
         "os_detected": scan["os_detected"],
         "scan_source": scan["scan_source"],
         "error_message": scan["error_message"],
+        "score": scan["score"],
         "counts": {
             "critical": scan["crit"], "high": scan["high"], "med": scan["med"],
             "low": scan["low"], "info": scan["info"],
