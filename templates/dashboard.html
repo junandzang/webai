@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>운영자 대시보드</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="login-wrap">
+    <div class="login-card">
+      <h1>환영합니다, {{ username }}님</h1>
+      <p class="subtitle">운영자 페이지에 로그인되었습니다.</p>
+
+      <button type="button" class="secondary-btn" onclick="openPwModal()">비밀번호 변경</button>
+      <a class="logout-btn" href="/logout">로그아웃</a>
+    </div>
+  </div>
+
+  <!-- 비밀번호 변경 팝업 -->
+  <div class="modal-overlay" id="pwModal">
+    <div class="modal">
+      <h2>비밀번호 변경</h2>
+
+      <div class="modal-msg" id="pwMsg" role="alert"></div>
+
+      <form id="pwForm" autocomplete="off">
+        <label for="current_password">현재 비밀번호</label>
+        <input type="password" id="current_password" name="current_password">
+
+        <label for="new_password">새 비밀번호</label>
+        <input type="password" id="new_password" name="new_password">
+
+        <label for="confirm_password">새 비밀번호 확인</label>
+        <input type="password" id="confirm_password" name="confirm_password">
+
+        <div class="modal-actions">
+          <button type="button" class="cancel-btn" onclick="closePwModal()">취소</button>
+          <button type="submit" class="save-btn">저장</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    const modal = document.getElementById('pwModal');
+    const form = document.getElementById('pwForm');
+    const msg = document.getElementById('pwMsg');
+
+    function openPwModal() {
+      form.reset();
+      hideMsg();
+      modal.classList.add('open');
+      document.getElementById('current_password').focus();
+    }
+    function closePwModal() {
+      modal.classList.remove('open');
+    }
+    function showMsg(text, ok) {
+      msg.textContent = text;
+      msg.className = 'modal-msg ' + (ok ? 'ok' : 'error') + ' show';
+    }
+    function hideMsg() {
+      msg.className = 'modal-msg';
+      msg.textContent = '';
+    }
+
+    // 오버레이 바깥 클릭 시 닫기
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) closePwModal();
+    });
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      hideMsg();
+      const data = new URLSearchParams(new FormData(form));
+      try {
+        const res = await fetch('/change-password', { method: 'POST', body: data });
+        const json = await res.json();
+        if (json.ok) {
+          showMsg(json.message, true);
+          form.reset();
+          setTimeout(closePwModal, 1200);
+        } else {
+          showMsg(json.message, false);
+        }
+      } catch (err) {
+        showMsg('요청 처리 중 오류가 발생했습니다.', false);
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+# 환경변수 (실제 자격증명)
+.env
+
+# 실행 로그
+server.log
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# 에디터
+.idea/
+.vscode/
