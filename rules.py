@@ -90,7 +90,7 @@ def _sev_max(a, b):
 
 
 def _item(category, title, severity, result, detail, remediation,
-          port=None, evidence="", cve_ids=None):
+          port=None, evidence="", cve_ids=None, ref_url=""):
     return {
         "category": category,
         "title": title,
@@ -101,7 +101,37 @@ def _item(category, title, severity, result, detail, remediation,
         "evidence": evidence,
         "remediation": remediation,
         "cve_ids": cve_ids or [],
+        "ref_url": ref_url,
     }
+
+
+# 조치 시 참고할 공식/신뢰 문서 URL
+REF = {
+    "plaintext": "https://owasp.org/www-community/vulnerabilities/Insecure_Transport",
+    "ftp_anon": "https://datatracker.ietf.org/doc/html/rfc2577",
+    "ssh": "https://infosec.mozilla.org/guidelines/openssh",
+    "rdp": "https://learn.microsoft.com/windows-server/remote/remote-desktop-services/security-guidance",
+    "vnc": "https://www.realvnc.com/en/connect/docs/security.html",
+    "tls": "https://ssl-config.mozilla.org/",
+    "headers": "https://owasp.org/www-project-secure-headers/",
+    "firewall": "https://www.cisecurity.org/controls",
+    "eol": "https://endoflife.date/",
+    "mysql": "https://mariadb.com/kb/en/securing-mariadb/",
+    "postgresql": "https://www.postgresql.org/docs/current/runtime-config-connection.html",
+    "mssql": "https://learn.microsoft.com/sql/relational-databases/security/securing-sql-server",
+    "oracle": "https://docs.oracle.com/en/database/oracle/oracle-database/",
+    "mongodb": "https://www.mongodb.com/docs/manual/administration/security-checklist/",
+    "redis": "https://redis.io/docs/latest/operate/oss_and_stack/management/security/",
+    "elasticsearch": "https://www.elastic.co/guide/en/elasticsearch/reference/current/secure-cluster.html",
+    "db_generic": "https://www.cisecurity.org/cis-benchmarks",
+}
+
+# DB 제품별 보안 가이드 URL (표시명 -> REF 키)
+_DB_REF = {
+    "MySQL/MariaDB": "mysql", "PostgreSQL": "postgresql",
+    "Microsoft SQL Server": "mssql", "Oracle DB": "oracle",
+    "MongoDB": "mongodb", "Redis": "redis", "Elasticsearch": "elasticsearch",
+}
 
 
 def _script_output(port, script_id):
@@ -183,8 +213,10 @@ def _check_os(os_text, open_ports, os_evidence=""):
             return _item(
                 "os", f"지원 종료(EOL) OS: {os_text}", "high", "fail",
                 desc + " 신규 취약점이 발견돼도 보안 패치를 받지 못합니다." + ver_note,
-                "지원되는 최신 OS 버전으로 업그레이드하세요.",
-                evidence=evidence,
+                "지원 기간 내인 최신 LTS/릴리스로 업그레이드하고, 이관 전까지는 접근 통제·"
+                "가상 패치(WAF/IPS)로 위험을 완화하세요. endoflife.date에서 각 제품의 "
+                "지원 종료일을 확인할 수 있습니다.",
+                evidence=evidence, ref_url=REF["eol"],
             )
     return _item(
         "os", f"운영체제: {os_text}", "info", "pass",
@@ -219,14 +251,18 @@ def _check_ports(open_ports):
                         "account", f"익명 FTP 로그인 허용 ({port}/tcp)",
                         "critical", "fail",
                         "인증 없이 FTP에 접속할 수 있어 파일 열람·업로드로 이어질 수 있습니다.",
-                        "익명 로그인을 비활성화하고 SFTP/FTPS로 전환하세요.",
-                        port=port, evidence=anon.strip(),
+                        "vsftpd는 vsftpd.conf에서 anonymous_enable=NO로 익명 접속을 끄고, "
+                        "ProFTPD는 <Anonymous> 블록을 제거하세요. 파일 전송은 SFTP(22) 또는 "
+                        "명시적 FTPS(TLS)로 전환하고, 데몬을 재시작해 반영하세요.",
+                        port=port, evidence=anon.strip(), ref_url=REF["ftp_anon"],
                     ))
             checks.append(_item(
                 "port", f"평문 인증 서비스 노출: {name} ({port}/tcp)",
                 "high", "fail", desc,
-                f"{name}를 끄거나 암호화된 대체 프로토콜(SSH/SFTP/FTPS/TLS)로 전환하세요.",
-                port=port, evidence=evidence,
+                f"{name}는 자격증명을 평문으로 전송합니다. 서비스를 끄거나 암호화된 대체 "
+                "프로토콜(FTP→SFTP/FTPS, Telnet→SSH, SMTP/POP3/IMAP→STARTTLS 또는 "
+                "SSL 포트 465/993/995)로 전환하고, 방화벽으로 신뢰 대역만 허용하세요.",
+                port=port, evidence=evidence, ref_url=REF["plaintext"],
             ))
             continue
 
@@ -234,11 +270,22 @@ def _check_ports(open_ports):
         if port in REMOTE_ADMIN_SERVICES:
             name, sev, desc = REMOTE_ADMIN_SERVICES[port]
             result = "warn" if sev == "medium" else "fail"
+            ref = REF["rdp"] if port == 3389 else (
+                REF["vnc"] if port == 5900 else REF["ssh"])
+            remediation = (
+                "방화벽/보안그룹에서 접근 출발지 IP를 화이트리스트로 제한하고, "
+                "가능하면 VPN·베스천(점프) 호스트 뒤로 옮기세요. 강한 인증과 MFA를 적용하고, "
+                "fail2ban 등으로 무차별 대입을 차단하세요.")
+            if port == 22:
+                remediation += (" SSH는 PasswordAuthentication no(키 기반 인증) + "
+                                "PermitRootLogin no로 sshd_config를 강화하세요.")
+            elif port == 3389:
+                remediation += (" RDP는 네트워크 수준 인증(NLA)을 켜고 최신 보안 패치를 "
+                                "적용하세요(BlueKeep 등).")
             item = _item(
                 "port", f"원격 관리 노출: {name} ({port}/tcp)", sev, result,
                 f"{desc} 인터넷에 직접 노출돼 있으면 계정 탈취 위험이 커집니다.",
-                "접근 IP를 화이트리스트로 제한하고 VPN 뒤에 두세요. 강한 인증·MFA를 적용하세요.",
-                port=port, evidence=evidence,
+                remediation, port=port, evidence=evidence, ref_url=ref,
             )
             # 약한 SSH 알고리즘
             if port == 22:
@@ -249,6 +296,9 @@ def _check_ports(open_ports):
                     item["severity"] = "high"
                     item["result"] = "fail"
                     item["detail"] += f" 약한 암호 알고리즘 사용: {', '.join(weak)}."
+                    item["remediation"] += (
+                        " sshd_config의 Ciphers/MACs/KexAlgorithms에서 arcfour·3des·"
+                        "hmac-md5·diffie-hellman-group1을 제거하고 최신 알고리즘만 허용하세요.")
             checks.append(item)
             continue
 
@@ -258,8 +308,10 @@ def _check_ports(open_ports):
                 "port", f"열린 포트 {port}/tcp ({p.get('service', 'unknown')})",
                 "low", "warn",
                 "불필요하게 열린 포트는 공격 표면을 넓힙니다.",
-                "사용하지 않는 서비스라면 방화벽으로 차단하세요.",
-                port=port, evidence=evidence,
+                f"{port}/tcp에서 동작하는 서비스가 꼭 필요한지 확인하고, 불필요하면 "
+                "해당 서비스를 중지하거나 방화벽에서 차단하세요. 필요하다면 접근 출발지 "
+                "IP를 제한하세요.",
+                port=port, evidence=evidence, ref_url=REF["firewall"],
             ))
     return checks
 
@@ -288,8 +340,11 @@ def _check_web(open_ports):
                 checks.append(_item(
                     "web", f"취약한 TLS 설정 ({port}/tcp)", "high", "fail",
                     f"오래된 프로토콜/약한 암호가 허용됩니다: {', '.join(weak) or '약한 암호군'}.",
-                    "TLS 1.2 이상만 허용하고 약한 암호군(RC4, 3DES, SSLv3 등)을 비활성화하세요.",
-                    port=port, evidence=(ciphers[:400] or evidence),
+                    "SSLv3·TLS 1.0/1.1을 비활성화하고 TLS 1.2 이상만 허용하세요. "
+                    "RC4·3DES·NULL·EXPORT 암호군을 제거하고 최신 암호군만 남기세요. "
+                    "Mozilla SSL Configuration Generator로 서버(nginx/Apache/HAProxy)별 "
+                    "설정을 생성해 적용할 수 있습니다.",
+                    port=port, evidence=(ciphers[:400] or evidence), ref_url=REF["tls"],
                 ))
             else:
                 checks.append(_item(
@@ -309,15 +364,21 @@ def _check_web(open_ports):
                 checks.append(_item(
                     "web", f"보안 헤더 누락 ({port}/tcp)", "low", "warn",
                     "누락된 헤더: " + ", ".join(missing) + ".",
-                    "웹 서버/애플리케이션에 보안 응답 헤더를 추가하세요.",
-                    port=port, evidence=headers[:300],
+                    "웹 서버 설정에 보안 응답 헤더를 추가하세요. 예: "
+                    "Strict-Transport-Security(HSTS), Content-Security-Policy, "
+                    "X-Frame-Options: DENY, X-Content-Type-Options: nosniff. "
+                    "nginx는 add_header, Apache는 Header set 지시자로 적용합니다.",
+                    port=port, evidence=headers[:300], ref_url=REF["headers"],
                 ))
 
     if has_plain_http and not has_https:
         checks.append(_item(
             "web", "HTTPS 미적용 (평문 HTTP)", "medium", "fail",
             "웹 서비스가 암호화 없이 제공되어 로그인 정보가 도청될 수 있습니다.",
-            "HTTPS(TLS)를 적용하고 HTTP는 HTTPS로 리다이렉트하세요.",
+            "Let's Encrypt 등으로 TLS 인증서를 발급해 HTTPS를 적용하고, "
+            "HTTP(80)는 301로 HTTPS(443)로 리다이렉트하세요. 적용 후 HSTS 헤더로 "
+            "브라우저가 항상 HTTPS를 쓰도록 강제하세요.",
+            ref_url=REF["tls"],
         ))
     return checks
 
@@ -340,20 +401,30 @@ def _check_db(open_ports):
                 unauth = ("authentication" not in low and "requirepass" not in low
                           and "unauthorized" not in low and "access denied" not in low)
                 if unauth:
+                    unauth_fix = {
+                        "Redis": "redis.conf에 requirepass(또는 ACL)를 설정하고 "
+                                 "bind 127.0.0.1 및 protected-mode yes로 외부 접근을 막으세요.",
+                        "MongoDB": "security.authorization: enabled로 인증을 켜고 관리자 계정을 "
+                                   "만든 뒤 bindIp를 내부 대역으로 제한하세요.",
+                    }.get(name, f"{name}에 인증을 설정하세요.")
                     checks.append(_item(
                         "account", f"무인증 {name} 접근 가능 ({port}/tcp)",
                         "critical", "fail",
                         f"인증 없이 {name}에 접속해 데이터를 읽을 수 있습니다. 계정·데이터 탈취로 직결됩니다.",
-                        f"{name}에 인증을 설정하고 외부 접근을 차단하세요.",
+                        unauth_fix + " 그리고 방화벽에서 외부 접근을 차단하세요.",
                         port=port, evidence=out[:300],
+                        ref_url=REF.get(_DB_REF.get(name, "db_generic")),
                     ))
                     continue
 
         checks.append(_item(
             "db", f"데이터베이스 노출: {name} ({port}/tcp)", "high", "fail",
             f"{name} 포트가 외부에서 접근 가능합니다. 무차별 대입·데이터 유출 위험이 있습니다.",
-            "DB 포트를 애플리케이션 서버로만 제한하고 방화벽·바인드 주소를 점검하세요. 강한 계정 정책을 적용하세요.",
+            f"{name} 포트를 애플리케이션 서버 IP로만 허용하도록 방화벽/보안그룹을 좁히고, "
+            "리슨 주소(bind-address 등)를 내부 인터페이스로 제한하세요. 강한 비밀번호·최소 권한 "
+            "계정 정책을 적용하고 기본 계정을 비활성화하세요.",
             port=port, evidence=evidence,
+            ref_url=REF.get(_DB_REF.get(name, "db_generic")),
         ))
     return checks
 

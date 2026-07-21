@@ -684,6 +684,48 @@ button:disabled:hover {
 .sev-medium-text { color: var(--warn); }
 .sev-low-text { color: #0891b2; }
 
+/* 클릭 가능한 심각도 카드 */
+.stat-link {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
+  transition: border-color 0.13s, box-shadow 0.13s, transform 0.13s;
+}
+.stat-link:hover {
+  border-color: #b9cdf5;
+  box-shadow: 0 6px 16px rgba(31, 41, 55, 0.08);
+  transform: translateY(-2px);
+}
+.stat-go {
+  display: block;
+  margin-top: 6px;
+  font-size: 11.5px;
+  color: var(--accent);
+  opacity: 0;
+  transition: opacity 0.13s;
+}
+.stat-link:hover .stat-go { opacity: 1; }
+
+/* 심각도별 findings 목록 페이지 */
+.finding-server {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  font-size: 12.5px;
+  font-weight: 700;
+}
+.finding-server a { color: var(--accent-dark); text-decoration: none; }
+.finding-server a:hover { text-decoration: underline; }
+.finding-server .fs-ip { font-weight: 500; color: var(--muted); }
+.finding-server .fs-group {
+  font-size: 11px; font-weight: 600; color: var(--muted);
+  background: #eef1f6; border-radius: 20px; padding: 1px 8px;
+}
+.check-ref { margin: 6px 0 0; font-size: 12.5px; }
+.check-ref a { color: var(--accent); word-break: break-all; }
+
 /* ===== 보안검사: 서버 카드 푸터 ===== */
 .card-scan {
   display: flex;
@@ -694,31 +736,38 @@ button:disabled:hover {
   padding-top: 11px;
   border-top: 1px dashed var(--line);
 }
-.scan-actions { display: flex; gap: 8px; }
-.icon-scan {
-  width: 34px;
-  height: 30px;
-  padding: 0;
-  display: flex;
+.scan-actions { display: flex; gap: 8px; width: 100%; }
+.btn-scan, .btn-report {
+  flex: 1;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 5px;
+  padding: 8px 6px;
   border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 0.13s, box-shadow 0.13s, opacity 0.13s;
+}
+.btn-scan svg, .btn-report svg { flex: 0 0 auto; }
+.btn-scan {
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 1px 2px rgba(37, 99, 235, 0.3);
+}
+.btn-scan:hover:not(:disabled) { background: var(--accent-dark); }
+.btn-report {
   border: 1px solid #cfe0fd;
   background: var(--accent-soft);
   color: var(--accent-dark);
-  cursor: pointer;
-  text-decoration: none;
-  transition: background 0.13s, opacity 0.13s;
 }
-.icon-scan:hover:not(:disabled) { background: #dbe8fe; }
-.scan-report {
-  border-color: var(--line);
-  background: #fff;
-  color: var(--muted);
-}
-.scan-report:hover { background: #f3f5f9; color: var(--accent-dark); }
-.scan-btn.loading { opacity: 0.55; }
-.scan-btn.loading svg { animation: scan-pulse 1s ease-in-out infinite; }
+.btn-report:hover { background: #dbe8fe; }
+.btn-scan.loading { opacity: 0.6; }
+.btn-scan.loading svg { animation: scan-pulse 1s ease-in-out infinite; }
 @keyframes scan-pulse { 50% { opacity: 0.3; } }
 .scan-state {
   font-size: 11.5px;

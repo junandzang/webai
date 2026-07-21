@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+
+{% block title %}{{ severity_label[severity] }} 위험 목록{% endblock %}
+{% block page_title %}보안검사 · {{ severity_label[severity] }} 위험 목록{% endblock %}
+
+{% block topbar_actions %}
+  <a class="primary-btn" href="/dashboard">← 대시보드</a>
+{% endblock %}
+
+{% block content %}
+<section class="hero">
+  <div class="hero-head">
+    <span class="sev-badge sev-{{ severity }}">{{ severity_label[severity] }}</span>
+    <strong class="hero-title">{{ severity_label[severity] }} 위험 {{ items | length }}건</strong>
+  </div>
+  <p class="hero-sub">전체 서버의 최신 보안검사에서 <b>{{ severity_label[severity] }}</b>으로
+    판정된 항목입니다. 각 항목에 어느 서버인지와 조치 방법을 함께 표시합니다.</p>
+</section>
+
+<section class="panel">
+  {% if not items %}
+    <div class="empty">
+      <p>{{ severity_label[severity] }}으로 판정된 항목이 없습니다.</p>
+      <a class="primary-btn" href="/dashboard">대시보드로</a>
+    </div>
+  {% else %}
+    {% for c in items %}
+      {% if loop.previtem is not defined or loop.previtem.server_id != c.server_id %}
+        {% if not loop.first %}</div>{% endif %}
+        <div class="check-group">
+          <p class="finding-server">
+            <a href="/servers/{{ c.server_id }}">🖥 {{ c.server_name }}</a>
+            <span class="fs-group">{{ c.group_name }}</span>
+            <span class="fs-ip">{{ c.target_ip }}</span>
+          </p>
+      {% endif %}
+
+      <div class="check-row result-{{ c.result }} sev-{{ c.severity }}">
+        <div class="check-main">
+          <span class="sev-badge sev-{{ c.severity }}">{{ severity_label[c.severity] }}</span>
+          <span class="check-title">{{ c.title }}</span>
+          <span class="result-tag result-{{ c.result }}">
+            {{ category_label.get(c.category, c.category) }}</span>
+        </div>
+        {% if c.detail %}<p class="check-detail">{{ c.detail }}</p>{% endif %}
+        {% if c.cve_ids %}<p class="check-cve">관련 CVE: {{ c.cve_ids }}</p>{% endif %}
+        {% if c.remediation %}<p class="check-fix"><strong>조치</strong> {{ c.remediation }}</p>{% endif %}
+        {% if c.ref_url %}<p class="check-ref">🔗 참고: <a href="{{ c.ref_url }}" target="_blank" rel="noopener">{{ c.ref_url }}</a></p>{% endif %}
+        {% if c.evidence %}<details class="check-evi"><summary>근거 보기</summary><pre>{{ c.evidence }}</pre></details>{% endif %}
+      </div>
+
+      {% if loop.last %}</div>{% endif %}
+    {% endfor %}
+  {% endif %}
+</section>
+{% endblock %}

@@ -97,7 +97,7 @@ def main():
             #    이후 재실행(스키마 추가 등)에서 사용자가 지운 샘플이 되살아나지 않도록.
             cur.execute("SELECT COUNT(*) AS c FROM servers")
             seeded = 0
-            if cur.fetchone()["c"] == 0:
+            if cur.fetchone()[0] == 0:
                 cur.executemany(
                     "INSERT IGNORE INTO servers "
                     "(group_name, name, ip, os, role, status) "
@@ -147,9 +147,15 @@ def main():
                     evidence    TEXT,
                     remediation TEXT,
                     cve_ids     VARCHAR(255) DEFAULT '',
+                    ref_url     VARCHAR(255) DEFAULT '',
                     INDEX idx_scan (scan_id)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
                 """
+            )
+            # 기존 설치 대응: ref_url 컬럼이 없으면 추가한다.
+            cur.execute(
+                "ALTER TABLE scan_checks "
+                "ADD COLUMN IF NOT EXISTS ref_url VARCHAR(255) DEFAULT ''"
             )
 
     print(

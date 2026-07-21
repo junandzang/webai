@@ -53,22 +53,26 @@
   </section>
 
   <section class="stats sev-stats">
-    <div class="stat">
+    <a class="stat stat-link" href="/findings?severity=critical">
       <p class="stat-label">심각 <span class="sev-dot sev-critical"></span></p>
       <p class="stat-value sev-critical-text">{{ sev_totals.crit }}</p>
-    </div>
-    <div class="stat">
+      <span class="stat-go">목록 보기 →</span>
+    </a>
+    <a class="stat stat-link" href="/findings?severity=high">
       <p class="stat-label">높음 <span class="sev-dot sev-high"></span></p>
       <p class="stat-value sev-high-text">{{ sev_totals.high }}</p>
-    </div>
-    <div class="stat">
+      <span class="stat-go">목록 보기 →</span>
+    </a>
+    <a class="stat stat-link" href="/findings?severity=medium">
       <p class="stat-label">보통 <span class="sev-dot sev-medium"></span></p>
       <p class="stat-value sev-medium-text">{{ sev_totals.med }}</p>
-    </div>
-    <div class="stat">
+      <span class="stat-go">목록 보기 →</span>
+    </a>
+    <a class="stat stat-link" href="/findings?severity=low">
       <p class="stat-label">낮음 <span class="sev-dot sev-low"></span></p>
       <p class="stat-value sev-low-text">{{ sev_totals.low }}</p>
-    </div>
+      <span class="stat-go">목록 보기 →</span>
+    </a>
   </section>
 
   <section class="panel">
@@ -130,25 +134,25 @@
 
         <div class="card-scan">
           <div class="scan-actions">
-            <button type="button" class="icon-scan scan-btn" data-id="{{ s.id }}"
-                    title="보안검사" aria-label="보안검사">
-              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+            <button type="button" class="btn-scan scan-btn" data-id="{{ s.id }}">
+              <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
                 <path d="M12 3l7 3v5c0 4.4-3 7.7-7 9-4-1.3-7-4.6-7-9V6l7-3z"
-                      fill="none" stroke="currentColor" stroke-width="1.7"
+                      fill="none" stroke="currentColor" stroke-width="1.8"
                       stroke-linejoin="round"/>
                 <path d="M9 12l2 2 4-4" fill="none" stroke="currentColor"
-                      stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+                      stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
+              <span class="btn-label">보안검사</span>
             </button>
-            <a class="icon-scan scan-report" href="/servers/{{ s.id }}"
-               title="리포트" aria-label="리포트">
-              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
-                <path d="M7 3h7l4 4v14a0 0 0 0 1 0 0H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"
-                      fill="none" stroke="currentColor" stroke-width="1.7"
+            <a class="btn-report scan-report" href="/servers/{{ s.id }}">
+              <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+                <path d="M7 3h7l4 4v14H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"
+                      fill="none" stroke="currentColor" stroke-width="1.8"
                       stroke-linejoin="round"/>
                 <path d="M14 3v4h4M9 12h6M9 16h6" fill="none" stroke="currentColor"
-                      stroke-width="1.7" stroke-linecap="round"/>
+                      stroke-width="1.8" stroke-linecap="round"/>
               </svg>
+              <span class="btn-label">리포트</span>
             </a>
           </div>
           <span class="scan-state" data-id="{{ s.id }}"></span>
@@ -385,6 +389,7 @@
       const data = await res.json();
       renderScanState(el, data);
       const btn = document.querySelector(`.scan-btn[data-id="${id}"]`);
+      const label = btn ? btn.querySelector('.btn-label') : null;
       if (data.status === 'queued' || data.status === 'running') {
         if (btn) { btn.disabled = true; btn.classList.add('loading'); }
         pollTimers[id] = setTimeout(() => pollScan(id), 2000);
@@ -393,7 +398,8 @@
         if (btn) {
           btn.disabled = false;
           btn.classList.remove('loading');
-          btn.title = '재검사';
+          // 한 번이라도 검사한 서버는 '재검사'로 표기
+          if (label && data.status === 'done') label.textContent = '재검사';
         }
       }
     } catch (err) {

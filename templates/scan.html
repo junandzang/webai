@@ -73,6 +73,7 @@
         {% if c.detail %}<p class="check-detail">{{ c.detail }}</p>{% endif %}
         {% if c.cve_ids %}<p class="check-cve">관련 CVE: {{ c.cve_ids }}</p>{% endif %}
         {% if c.remediation %}<p class="check-fix"><strong>조치</strong> {{ c.remediation }}</p>{% endif %}
+        {% if c.ref_url %}<p class="check-ref">🔗 참고: <a href="{{ c.ref_url }}" target="_blank" rel="noopener">{{ c.ref_url }}</a></p>{% endif %}
         {% if c.evidence %}<details class="check-evi"><summary>근거 보기</summary><pre>{{ c.evidence }}</pre></details>{% endif %}
       </div>
       {% endfor %}

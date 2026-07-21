@@ -23,6 +23,7 @@ from db import (
     delete_group,
     delete_server,
     get_operator,
+    findings_by_severity,
     get_scan_checks,
     get_server,
     latest_scan,
@@ -418,5 +419,29 @@ def server_report(request: Request, server_id: int):
             "category_label": CATEGORY_LABEL,
             "severity_label": SEVERITY_LABEL,
             "result_label": RESULT_LABEL,
+        },
+    )
+
+
+@app.get("/findings", response_class=HTMLResponse)
+def findings(request: Request, severity: str = "high"):
+    if not request.session.get("username"):
+        return RedirectResponse("/login", status_code=303)
+
+    if severity not in SEVERITY_LABEL:
+        severity = "high"
+    items = findings_by_severity(severity)
+
+    return templates.TemplateResponse(
+        request=request,
+        name="findings.html",
+        context={
+            "username": request.session["username"],
+            "groups": list_groups(),
+            "selected": "",
+            "severity": severity,
+            "items": items,
+            "category_label": CATEGORY_LABEL,
+            "severity_label": SEVERITY_LABEL,
         },
     )

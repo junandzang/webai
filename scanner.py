@@ -230,8 +230,10 @@ def _enrich_with_nvd(checks, scan_result):
                 "detail": f"{top['id']} ({top.get('severity') or '?'}, "
                           f"CVSS {top.get('score')}): {top.get('summary', '')}",
                 "evidence": ", ".join(ids),
-                "remediation": "해당 제품/버전을 보안 패치가 적용된 최신 버전으로 업데이트하세요.",
+                "remediation": f"{kw}를 보안 패치가 적용된 최신 버전으로 업데이트하세요. "
+                               "NVD 링크에서 영향 버전과 CVSS·완화책을 확인하세요.",
                 "cve_ids": ids,
+                "ref_url": f"https://nvd.nist.gov/vuln/detail/{top['id']}",
             }
             checks.append(rules_item)
     return source

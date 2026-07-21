@@ -341,14 +341,15 @@ def add_check(scan_id: int, check: dict):
             cur.execute(
                 "INSERT INTO scan_checks "
                 "(scan_id, category, title, severity, result, port, "
-                " detail, evidence, remediation, cve_ids) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                " detail, evidence, remediation, cve_ids, ref_url) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     scan_id, check["category"], check["title"][:200],
                     check["severity"], check["result"], check.get("port"),
                     check.get("detail", ""), check.get("evidence", ""),
                     check.get("remediation", ""),
                     ",".join(check.get("cve_ids", []))[:255],
+                    check.get("ref_url", "")[:255],
                 ),
             )
 
@@ -374,6 +375,33 @@ def get_scan(scan_id: int):
         with conn.cursor() as cur:
             cur.execute("SELECT * FROM scans WHERE id = %s", (scan_id,))
             return cur.fetchone()
+
+
+def findings_by_severity(severity: str):
+    """전체 서버의 최신 완료 스캔에서 주어진 심각도의 취약/주의 항목을 모은다.
+
+    각 항목에 어느 서버인지(server_id, server_name, group_name, target_ip)를 붙여 반환한다.
+    """
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT c.*, sv.id AS server_id, sv.name AS server_name,
+                       sv.group_name AS group_name, s.target_ip AS target_ip
+                FROM scan_checks c
+                JOIN scans s ON s.id = c.scan_id
+                JOIN (
+                    SELECT server_id, MAX(id) AS mid
+                    FROM scans WHERE status = 'done'
+                    GROUP BY server_id
+                ) t ON s.id = t.mid
+                JOIN servers sv ON sv.id = s.server_id
+                WHERE c.severity = %s AND c.result IN ('fail', 'warn')
+                ORDER BY sv.group_name, sv.name, c.id
+                """,
+                (severity,),
+            )
+            return cur.fetchall()
 
 
 def severity_totals():
