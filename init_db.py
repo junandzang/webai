@@ -157,6 +157,11 @@ def main():
                 "ALTER TABLE scan_checks "
                 "ADD COLUMN IF NOT EXISTS ref_url VARCHAR(255) DEFAULT ''"
             )
+            # 점수(0~100) 컬럼. SolidStep 스타일 UI(8100)의 자산 점수에 사용한다.
+            cur.execute(
+                "ALTER TABLE scans "
+                "ADD COLUMN IF NOT EXISTS score FLOAT DEFAULT NULL"
+            )
 
     print(
         f"[완료] 데이터베이스 '{config.DB_NAME}'에 "

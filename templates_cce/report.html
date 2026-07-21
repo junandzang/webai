@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>보고서 상세 보기 · {{ server.name }}</title>
+  <link rel="stylesheet" href="/static/cce.css">
+</head>
+<body class="cce-report">
+  <header class="report-header">
+    <span>보고서 상세 보기</span>
+    <a class="report-close" href="/results">✕</a>
+  </header>
+
+  <div class="report-body">
+    <!-- 좌측 항목 리스트 -->
+    <aside class="item-panel">
+      <div class="item-search"><span class="ic">⌕</span><input type="text" id="itemSearch" placeholder="항목 검색"></div>
+      {% for gname, gitems in groups.items() %}
+        {% if gitems %}
+        <div class="item-group">
+          <div class="item-group-head">{{ gname }} <span class="igc">{{ gitems | length }}</span></div>
+          {% for c in gitems %}
+          <div class="item-row" data-code="{{ c.code }}"
+               data-title="{{ c.title }}"
+               data-sev="{{ c.sev_ko }}" data-sevkey="{{ c.severity }}"
+               data-group="{{ c.group_ko }}" data-category="{{ c.category }}"
+               data-detail="{{ c.detail }}" data-evidence="{{ c.evidence }}"
+               data-remediation="{{ c.remediation }}" data-ref="{{ c.ref_url }}"
+               data-cve="{{ c.cve_ids }}">
+            <span class="sev-tag sev-{{ c.severity }}">{{ c.sev_ko }}</span>
+            <span class="item-code">{{ c.code }}</span>
+            <span class="item-title">{{ c.title }}</span>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+      {% endfor %}
+    </aside>
+
+    <!-- 우측 상세 -->
+    <main class="report-detail">
+      <div class="rd-summary">
+        <div class="rd-title">
+          <strong>{{ server.name }}</strong>
+          <span class="rd-meta">{{ server.ip or '-' }} &nbsp;|&nbsp; {{ (server.os or 'linux').split()[0] if server.os else 'linux' }} &nbsp;|&nbsp; SLA</span>
+        </div>
+        <div class="rd-scoreline">
+          <div class="rd-score score-{{ score_color }}">{{ scan.score if scan.score is not none else '-' }}</div>
+          <div class="rd-risk">
+            <div class="rr-head"><span>취약</span><span class="rr-vuln">{{ groups['취약'] | length }}개</span></div>
+            <div class="rr-row">
+              <span class="rr-label">취약 항목 위험도</span>
+              <span class="rr-cell"><em class="lb-critical">최상</em> {{ risk['최상'] }}개</span>
+              <span class="rr-cell"><em class="lb-high">상</em> {{ risk['상'] }}개</span>
+              <span class="rr-cell"><em class="lb-medium">중</em> {{ risk['중'] }}개</span>
+              <span class="rr-cell"><em class="lb-low">하</em> {{ risk['하'] }}개</span>
+              <span class="rr-cell"><em class="lb-info">최하</em> {{ risk['최하'] }}개</span>
+            </div>
+          </div>
+          <div class="rd-info">
+            <div>진단명 <b>{{ diag_name }}</b></div>
+            <div>템플릿명 <b>{{ diag_template }}</b></div>
+            <div>수집 일시 <b>{{ scan.started_at.strftime('%Y-%m-%d %H:%M:%S') if scan.started_at else '-' }}</b></div>
+            <div>분석 일시 <b>{{ scan.finished_at.strftime('%Y-%m-%d %H:%M:%S') if scan.finished_at else '-' }}</b></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 선택 항목 상세 -->
+      <section class="rd-item" id="itemDetail">
+        <div class="rd-item-head">
+          <span class="rd-item-group" id="d_group">취약</span>
+          <span class="rd-item-code" id="d_code"></span>
+          <span class="rd-item-title" id="d_title"></span>
+        </div>
+        <table class="rd-item-table">
+          <thead><tr><th>결과</th><th>분류</th><th>위험도</th><th>항목 코드</th><th>항목명</th><th>조치 담당자</th><th>조치 기한</th></tr></thead>
+          <tbody><tr>
+            <td id="t_result">-</td><td id="t_category">-</td><td id="t_sev">-</td>
+            <td id="t_code">-</td><td id="t_name">-</td><td>-</td><td>-</td>
+          </tr></tbody>
+        </table>
+
+        <h3 class="rd-sec">진단 기준</h3>
+        <pre class="rd-box" id="d_detail"></pre>
+
+        <h3 class="rd-sec">현황</h3>
+        <pre class="rd-box" id="d_evidence"></pre>
+
+        <h3 class="rd-sec">조치 방법</h3>
+        <pre class="rd-box" id="d_remediation"></pre>
+        <p class="rd-ref" id="d_ref_wrap" hidden>🔗 참고: <a id="d_ref" href="#" target="_blank" rel="noopener"></a></p>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const rows = [...document.querySelectorAll('.item-row')];
+
+    function select(row) {
+      rows.forEach(r => r.classList.remove('sel'));
+      row.classList.add('sel');
+      const d = row.dataset;
+      document.getElementById('d_group').textContent = d.group;
+      document.getElementById('d_group').className = 'rd-item-group grp-' + (d.group === '양호' ? 'ok' : d.group === '수동 점검' ? 'manual' : 'vuln');
+      document.getElementById('d_code').textContent = d.code;
+      document.getElementById('d_title').textContent = d.title;
+      document.getElementById('t_result').textContent = d.group;
+      document.getElementById('t_category').textContent = d.category;
+      document.getElementById('t_sev').textContent = d.sev;
+      document.getElementById('t_code').textContent = d.code;
+      document.getElementById('t_name').textContent = d.title;
+      document.getElementById('d_detail').textContent = d.detail || '(내용 없음)';
+      document.getElementById('d_evidence').textContent = d.evidence || '(수집된 근거 없음)';
+      document.getElementById('d_remediation').textContent = d.remediation || '(조치 방법 없음)';
+      const refWrap = document.getElementById('d_ref_wrap');
+      if (d.ref) { refWrap.hidden = false; const a=document.getElementById('d_ref'); a.href=d.ref; a.textContent=d.ref; }
+      else refWrap.hidden = true;
+    }
+
+    rows.forEach(r => r.addEventListener('click', () => select(r)));
+    if (rows.length) select(rows[0]);
+
+    // 항목 검색
+    document.getElementById('itemSearch').addEventListener('input', (e) => {
+      const q = e.target.value.trim().toLowerCase();
+      rows.forEach(r => {
+        const hit = !q || (r.dataset.title + ' ' + r.dataset.code).toLowerCase().includes(q);
+        r.style.display = hit ? '' : 'none';
+      });
+    });
+  </script>
+</body>
+</html>

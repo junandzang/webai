@@ -32,6 +32,18 @@ python -m uvicorn app:app --reload --port 8000
 ```
 브라우저에서 http://localhost:8000 접속
 
+### (선택) SolidStep 스타일 UI — 포트 8100
+같은 DB·스캔 엔진을 공유하는 별도 디자인의 콘솔입니다. 8000과 동시에 띄울 수 있습니다.
+```bash
+python -m uvicorn app_cce:app --port 8100
+```
+브라우저에서 http://localhost:8100 접속 (로그인 계정은 8000과 동일).
+- 빨간 테마 로그인 + 좌측 아이콘 레일 + 자산 그룹/대상 패널 + 상단 탭
+- **자산 정보**: 자산별 점수 카드, 평균 점수, 진단 실행(톱니)
+- **진단 결과**: 자산별 최신 진단 요약 + 보고서 상세보기
+- **보고서 상세보기**: 취약/수동 점검/양호 분류, 위험도(최상~최하), 진단기준·현황·조치방법
+- 나머지 탭(조치/결재/작업내역/로그/통계/대시보드/다운로드)은 "준비 중"
+
 ## 화면
 - `/login` : 아이디/비밀번호 로그인
   - 빈 입력 시: "아이디와 비밀번호를 모두 입력해주세요."
@@ -90,8 +102,10 @@ python -m uvicorn app:app --reload --port 8000
 | `config.py` | `.env`에서 DB 접속정보·세션 시크릿·초기 계정·스캔 설정을 읽어옴 |
 | `db.py` | DB 커넥션, 비밀번호 해시(bcrypt)/검증, 계정·서버 CRUD, 스캔 저장 |
 | `init_db.py` | DB/테이블 생성, admin 및 샘플 서버 시드 (재실행 안전) |
-| `app.py` | FastAPI 라우트 (로그인/대시보드/서버·그룹 API/보안검사/로그아웃) |
-| `scanner.py` | nmap 실행·XML 파싱·NVD 병합 오케스트레이터 |
+| `app.py` | 기존 UI(8000) FastAPI 라우트 |
+| `app_cce.py` | SolidStep 스타일 UI(8100) FastAPI 라우트 — db/scanner 공유 |
+| `templates_cce/`, `static_cce/` | 8100 전용 템플릿·스타일 |
+| `scanner.py` | nmap 실행·XML 파싱·NVD 병합 오케스트레이터 (점수 계산 포함) |
 | `rules.py` | 오프라인 보안 점검 규칙 엔진 |
 | `nvd.py` | NVD CVE 실시간 조회(+오프라인 폴백) |
 | `templates/` | base.html(셸), login.html, dashboard.html, scan.html(리포트) |

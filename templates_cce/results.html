@@ -1,0 +1,53 @@
+{% extends "base_cce.html" %}
+{% block title %}진단 결과 · SolidStep{% endblock %}
+
+{% block subtabs %}
+  <a class="subtab" href="/results">진단별 보기</a>
+  <a class="subtab" href="/results">그룹별 보기</a>
+  <a class="subtab active" href="/results">자산별 보기</a>
+  <a class="subtab" href="/placeholder/진단 비교">진단 비교</a>
+  <a class="subtab" href="/placeholder/진단 현황 등록">진단 현황 등록</a>
+{% endblock %}
+
+{% block content %}
+<div class="results-top">
+  <span class="total-badge">총 {{ assets | length }}개</span>
+  <div class="search-fake"><span class="ic">⌕</span><input type="text" placeholder="자산 검색" disabled></div>
+  <span class="daterange">📅 최근 3개월</span>
+</div>
+
+<div class="result-list">
+  {% for a in assets %}
+  <div class="result-card">
+    <div class="result-head">
+      <span class="rc-name">{{ a.name }}</span>
+      <span class="rc-meta">자산 번호 {{ a.id }} &nbsp;|&nbsp; SLA</span>
+    </div>
+    {% if a.scan_id %}
+    <table class="result-table">
+      <thead>
+        <tr><th>점수</th><th>진단명</th><th>진단 템플릿</th><th>진단 대상</th>
+            <th>수집 일시</th><th>진행 현황</th><th>보고서</th><th>상세 보기</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="rc-score score-text-{{ a.score_color }}">{{ a.score if a.score is not none else '-' }}</td>
+          <td>📋 {{ diag_name }}</td>
+          <td>{{ diag_template }}</td>
+          <td>{{ (a.os_detected or 'linux').split()[0] if a.os_detected else 'linux' }}</td>
+          <td>{{ a.finished_at.strftime('%Y-%m-%d %H:%M') if a.finished_at else '-' }}</td>
+          <td class="progress"><span class="dot on"></span><span class="dot on"></span><span class="dot on"></span></td>
+          <td><span class="rpt-tag">ENC</span><span class="rpt-tag">OUT</span></td>
+          <td><a class="detail-btn" href="/report/{{ a.scan_id }}" title="상세 보기">🔍</a></td>
+        </tr>
+      </tbody>
+    </table>
+    {% else %}
+    <p class="no-result">아직 진단 결과가 없습니다. 자산 정보 화면에서 진단을 실행하세요.</p>
+    {% endif %}
+  </div>
+  {% else %}
+  <div class="asset-empty">표시할 자산이 없습니다.</div>
+  {% endfor %}
+</div>
+{% endblock %}

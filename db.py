@@ -318,20 +318,48 @@ def set_scan_error(scan_id: int, message: str):
             )
 
 
-def set_scan_done(scan_id: int, os_detected: str, scan_source: str, counts: dict):
+def set_scan_done(scan_id: int, os_detected: str, scan_source: str, counts: dict,
+                  score: float = None):
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 "UPDATE scans SET status = 'done', os_detected = %s, "
                 "scan_source = %s, crit = %s, high = %s, med = %s, low = %s, "
-                "info = %s, finished_at = NOW() WHERE id = %s",
+                "info = %s, score = %s, finished_at = NOW() WHERE id = %s",
                 (
                     os_detected[:120], scan_source,
                     counts.get("critical", 0), counts.get("high", 0),
                     counts.get("medium", 0), counts.get("low", 0),
-                    counts.get("info", 0), scan_id,
+                    counts.get("info", 0), score, scan_id,
                 ),
             )
+
+
+# 심각도별 점수 가중치 (점수 계산·위험도 표기에 공용)
+SEVERITY_WEIGHT = {"critical": 5, "high": 4, "medium": 3, "low": 2, "info": 1}
+# 우리 위험도 -> SolidStep 5단계 라벨
+SEVERITY_KO = {"critical": "최상", "high": "상", "medium": "중",
+               "low": "하", "info": "최하"}
+# 체크 결과 -> SolidStep 3분류
+RESULT_GROUP = {"fail": "취약", "warn": "취약", "info": "수동 점검", "pass": "양호"}
+
+
+def compute_score(checks) -> float:
+    """체크리스트로 0~100 점수를 계산한다.
+
+    심각도 가중치 기준, 양호(pass)·정보(info) 항목이 차지하는 비율을 점수로 본다.
+    취약(fail/warn)이 많고 심각할수록 점수가 낮아진다.
+    """
+    total = 0.0
+    got = 0.0
+    for c in checks:
+        w = SEVERITY_WEIGHT.get(c["severity"], 1)
+        total += w
+        if c["result"] in ("pass", "info"):
+            got += w
+    if total == 0:
+        return 100.0
+    return round(100.0 * got / total, 1)
 
 
 def add_check(scan_id: int, check: dict):
@@ -437,3 +465,68 @@ def get_scan_checks(scan_id: int):
                 (scan_id,),
             )
             return cur.fetchall()
+
+
+# ===== SolidStep(8100) UI 전용 조회 =====
+
+# category -> 항목 코드 접두사
+_CODE_PREFIX = {"os": "OS", "port": "NET", "service": "SVC",
+                "web": "WEB", "db": "DB", "account": "ACC"}
+
+
+def scans_overview(group_name: str = None):
+    """자산별 최신 완료 스캔 요약. 자산 정보/진단 결과 목록에 사용한다.
+
+    서버 전체를 반환하되, 완료된 스캔이 있으면 점수·위험도·수집일시를 붙인다.
+    """
+    sql = (
+        "SELECT sv.id, sv.name, sv.group_name, sv.ip, sv.os, sv.role, sv.status, "
+        "       s.id AS scan_id, s.status AS scan_status, s.score, "
+        "       s.crit, s.high, s.med, s.low, s.info, s.os_detected, "
+        "       s.scan_source, s.finished_at "
+        "FROM servers sv "
+        "LEFT JOIN ( "
+        "  SELECT server_id, MAX(id) AS mid FROM scans WHERE status='done' "
+        "  GROUP BY server_id "
+        ") t ON t.server_id = sv.id "
+        "LEFT JOIN scans s ON s.id = t.mid "
+    )
+    params = ()
+    if group_name:
+        sql += "WHERE sv.group_name = %s "
+        params = (group_name,)
+    sql += "ORDER BY sv.sort_order, sv.name"
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, params)
+            return cur.fetchall()
+
+
+def scan_report(scan_id: int):
+    """보고서 상세보기용 묶음: 스캔 메타 + 서버 + 분류된 체크리스트.
+
+    반환: {"scan":..., "server":..., "checks":[...], "groups":{"취약":[...],...},
+           "risk":{"최상":n,...}} 또는 None.
+    각 check에 code(항목코드)·sev_ko(위험도 한글)·group_ko(분류) 필드를 덧붙인다.
+    """
+    scan = get_scan(scan_id)
+    if scan is None:
+        return None
+    server = get_server(scan["server_id"])
+    checks = get_scan_checks(scan_id)
+
+    groups = {"취약": [], "수동 점검": [], "양호": []}
+    risk = {"최상": 0, "상": 0, "중": 0, "하": 0, "최하": 0}
+    counters = {}
+    for c in checks:
+        prefix = _CODE_PREFIX.get(c["category"], "GEN")
+        counters[prefix] = counters.get(prefix, 0) + 1
+        c["code"] = f"{prefix}-{counters[prefix]:02d}"
+        c["sev_ko"] = SEVERITY_KO.get(c["severity"], c["severity"])
+        c["group_ko"] = RESULT_GROUP.get(c["result"], "기타")
+        groups.setdefault(c["group_ko"], []).append(c)
+        if c["result"] in ("fail", "warn"):
+            risk[c["sev_ko"]] = risk.get(c["sev_ko"], 0) + 1
+
+    return {"scan": scan, "server": server, "checks": checks,
+            "groups": groups, "risk": risk}

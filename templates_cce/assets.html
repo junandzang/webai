@@ -1,0 +1,109 @@
+{% extends "base_cce.html" %}
+{% block title %}자산 정보 · SolidStep{% endblock %}
+
+{% block subtabs %}
+  <a class="subtab active" href="/assets">자산 정보</a>
+  <a class="subtab" href="/placeholder/충돌 자산 관리">충돌 자산 관리</a>
+{% endblock %}
+
+{% block content %}
+<div class="asset-top">
+  <div class="avg-box">
+    <div class="avg-label">평균 점수</div>
+    <div class="avg-score score-{{ 'good' if avg_score and avg_score>=90 else 'fair' if avg_score and avg_score>=80 else 'warn' if avg_score and avg_score>=60 else 'bad' if avg_score else 'none' }}">
+      {{ avg_score if avg_score is not none else '-' }}
+    </div>
+  </div>
+  <div class="tmpl-box">
+    <div class="tmpl-label">진단 템플릿</div>
+    <div class="tmpl-row">
+      <select class="tmpl-select" disabled><option>{{ diag_template }}</option></select>
+      <button class="mini-btn" title="필터" disabled>⧨</button>
+      <button class="mini-btn" title="초기화" disabled>↺</button>
+      <label class="zero-chk"><input type="checkbox" disabled> 점수 없음 0점 처리</label>
+    </div>
+  </div>
+  <button class="menu-btn" title="메뉴" disabled>≡</button>
+</div>
+
+<div class="asset-list">
+  {% for a in assets %}
+  <article class="asset-card" data-id="{{ a.id }}">
+    <div class="score-box score-{{ a.score_color }}">
+      {{ a.score if a.score is not none else '미진단' }}
+    </div>
+    <div class="asset-main">
+      <div class="asset-name-row">
+        <span class="asset-name">{{ a.name }}</span>
+      </div>
+      <div class="asset-sub">
+        자산 번호 {{ a.id }}
+        <span class="lv"><span class="lv-dot"></span>Lv.1</span>
+        <span class="ok-badge">{{ '정상' if a.status == 'ok' else '점검' if a.status == 'check' else '중지' }}</span>
+        <span class="sep">|</span> {{ a.ip or '-' }}
+        <span class="sep">|</span> {{ (a.os or 'linux').split()[0] if a.os else 'linux' }}
+        <span class="sep">|</span> SLA
+        <span class="sep">|</span> Agent 버전 {{ agent_version }}
+      </div>
+    </div>
+    <div class="asset-right">
+      <span class="asset-ver">{{ a.role or 'Tomcat 9.0.111' }}</span>
+      <span class="asset-group">그룹 <b>1</b></span>
+      <button class="gear scan-btn" data-id="{{ a.id }}" title="진단 실행">⚙</button>
+      <span class="scan-state" data-id="{{ a.id }}"></span>
+    </div>
+  </article>
+  {% else %}
+  <div class="asset-empty">이 그룹에 자산이 없습니다.</div>
+  {% endfor %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const SCORE_COLOR = (s) => s==null?'none': s>=90?'good': s>=80?'fair': s>=60?'warn':'bad';
+
+  function renderState(el, data) {
+    if (!data || data.status === 'none') { el.textContent=''; return; }
+    if (data.status === 'queued' || data.status === 'running') {
+      el.className='scan-state running'; el.textContent='진단 중…'; return;
+    }
+    if (data.status === 'error') { el.className='scan-state err'; el.textContent='실패'; return; }
+    el.className='scan-state done'; el.textContent='완료';
+    // 점수 박스 즉시 갱신
+    const card = el.closest('.asset-card');
+    const box = card ? card.querySelector('.score-box') : null;
+    if (box && data.score != null) {
+      box.textContent = data.score;
+      box.className = 'score-box score-' + SCORE_COLOR(data.score);
+    }
+  }
+
+  async function poll(id) {
+    const el = document.querySelector(`.scan-state[data-id="${id}"]`);
+    if (!el) return;
+    try {
+      const d = await (await fetch(`/api/scan/${id}/status`)).json();
+      renderState(el, d);
+      if (d.status === 'queued' || d.status === 'running') setTimeout(()=>poll(id), 2000);
+      else { const b=document.querySelector(`.scan-btn[data-id="${id}"]`); if(b){b.disabled=false;b.classList.remove('spin');} }
+    } catch(e) { el.textContent=''; }
+  }
+
+  document.querySelectorAll('.scan-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.id;
+      btn.disabled = true; btn.classList.add('spin');
+      const el = document.querySelector(`.scan-state[data-id="${id}"]`);
+      try {
+        const d = await (await fetch(`/api/scan/${id}`, {method:'POST'})).json();
+        if (!d.ok) { el.className='scan-state err'; el.textContent=d.message||'실패'; btn.disabled=false; btn.classList.remove('spin'); return; }
+        el.className='scan-state running'; el.textContent='진단 중…';
+        poll(id);
+      } catch(e) { el.textContent='요청 실패'; btn.disabled=false; btn.classList.remove('spin'); }
+    });
+  });
+
+  document.querySelectorAll('.scan-state').forEach(el => poll(el.dataset.id));
+</script>
+{% endblock %}

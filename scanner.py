@@ -287,6 +287,7 @@ def run_scan(scan_id, server_id, ip):
             os_detected=scan_result.get("os", ""),
             scan_source=source,
             counts=counts,
+            score=db.compute_score(checks),
         )
     except subprocess.TimeoutExpired:
         db.set_scan_error(scan_id, "스캔이 시간 초과되었습니다.")

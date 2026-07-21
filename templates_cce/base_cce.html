@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}SolidStep 보안진단{% endblock %}</title>
+  <link rel="stylesheet" href="/static/cce.css">
+</head>
+<body class="cce">
+  <div class="cce-shell">
+
+    <!-- 좌측 아이콘 레일 -->
+    <aside class="rail">
+      <div class="rail-logo">
+        <span class="rail-logo-mark">◈</span>
+        <span class="rail-logo-text">SolidStep<small>CCE</small></span>
+      </div>
+      <nav class="rail-nav">
+        <a class="rail-item active" href="/assets" title="진단 실행">
+          <svg viewBox="0 0 24 24" width="20" height="20"><path d="M8 5v14l11-7z" fill="currentColor"/></svg>
+          <span>진단 실행</span>
+        </a>
+        <a class="rail-item" href="/placeholder/수동 진단" title="수동 진단">
+          <svg viewBox="0 0 24 24" width="20" height="20"><path d="M4 20h4L18 10l-4-4L4 16v4z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
+          <span>수동 진단</span>
+        </a>
+        <a class="rail-item" href="/placeholder/통계" title="통계">
+          <svg viewBox="0 0 24 24" width="20" height="20"><path d="M5 20V10M12 20V4M19 20v-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          <span>통계</span>
+        </a>
+        <a class="rail-item" href="/placeholder/대시보드" title="대시보드">
+          <svg viewBox="0 0 24 24" width="20" height="20"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z" fill="none" stroke="currentColor" stroke-width="1.7"/></svg>
+          <span>대시보드</span>
+        </a>
+        <a class="rail-item" href="/placeholder/다운로드" title="다운로드">
+          <svg viewBox="0 0 24 24" width="20" height="20"><path d="M12 4v10m0 0l-4-4m4 4l4-4M5 20h14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span>다운로드</span>
+        </a>
+      </nav>
+      <a class="rail-more" href="/placeholder/추가 작업">추가 작업 ›</a>
+    </aside>
+
+    <!-- 자산 그룹 패널 -->
+    <aside class="group-panel">
+      <div class="panel-head"><span>▾ 자산 그룹 보기</span><span class="collapse">«</span></div>
+      <div class="panel-search"><span class="ic">⌕</span><input type="text" placeholder="그룹명 검색" disabled></div>
+      <div class="group-root">전체 자산 <span class="folder">🗀</span></div>
+      <ul class="group-list">
+        {% for g in groups %}
+        <li>
+          <a class="group-item {% if g.group_name == selected %}active{% endif %}"
+             href="{{ base_link }}?group={{ g.group_name | urlencode }}">
+            <span class="tri">▸</span>{{ g.group_name }}
+            <span class="gcount">{{ g.total }}</span>
+          </a>
+        </li>
+        {% endfor %}
+      </ul>
+      <div class="panel-foot">그룹 미설정</div>
+    </aside>
+
+    <!-- 진단 대상 목록 패널 -->
+    <aside class="target-panel">
+      <div class="panel-head"><span>▾ 진단 대상 목록</span><span class="collapse">«</span></div>
+      <div class="panel-search"><span class="ic">⌕</span><input type="text" placeholder="진단 대상 검색" disabled></div>
+      <div class="target-count"><input type="checkbox" disabled> 진단 대상 <b>{{ target_count }}</b></div>
+      <ul class="target-list">
+        {% for t in targets %}
+        <li class="target-item">
+          <input type="checkbox" disabled>
+          <span class="sla">SLA</span>
+          <span class="tinfo">
+            <span class="tname">{{ t.name }}</span>
+            <span class="tip">{{ t.ip or '-' }}</span>
+          </span>
+          <span class="tos">{{ (t.os or 'linux').split()[0] if t.os else 'linux' }}</span>
+        </li>
+        {% else %}
+        <li class="target-empty">대상이 없습니다.</li>
+        {% endfor %}
+      </ul>
+      <div class="panel-foot pager">
+        <span>‹</span><span class="page">1</span><span>›</span>
+        <span class="per">50</span>
+      </div>
+    </aside>
+
+    <!-- 메인 -->
+    <main class="cce-main">
+      <header class="tabbar">
+        <nav class="tabs">
+          {% for key, label, href in top_tabs %}
+          <a class="tab {% if key == active_tab %}active{% endif %}" href="{{ href }}">{{ label }}</a>
+          {% endfor %}
+        </nav>
+        <div class="tabbar-right">
+          <a class="user-btn" href="/logout" title="{{ username }} · 로그아웃">
+            <svg viewBox="0 0 24 24" width="20" height="20"><circle cx="12" cy="8" r="4" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M4 21c0-4 3.5-6 8-6s8 2 8 6" fill="none" stroke="currentColor" stroke-width="1.7"/></svg>
+          </a>
+        </div>
+      </header>
+      <div class="subtabs">{% block subtabs %}{% endblock %}</div>
+      <div class="cce-content">{% block content %}{% endblock %}</div>
+    </main>
+  </div>
+
+  <footer class="statusbar">
+    <span class="sb-label">선택한 자산</span>
+    <span class="sb-item">자산 <b>{{ server_count }}</b></span>
+    <span class="sb-item">진단 대상 <b>{{ target_count }}</b></span>
+    <span class="sb-item">사용자 그룹 <b>{{ group_count }}</b></span>
+    <span class="sb-ver">SolidStep CCE</span>
+  </footer>
+
+  {% block scripts %}{% endblock %}
+</body>
+</html>
