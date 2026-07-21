@@ -48,8 +48,10 @@ def run_nmap(nmap_path, ip):
     """nmap을 실행해 XML 문자열을 반환한다. 실패 시 예외."""
     cmd = [
         nmap_path,
-        "-sT",              # TCP connect 스캔 (관리자 권한 불필요)
+        "-sT",              # TCP connect 스캔
         "-sV",              # 서비스/버전 탐지
+        "-O",               # OS 지문 (가능하면). 안 되면 nmap이 건너뛰고 계속 진행
+        "--osscan-guess",   # 정확한 매치가 없어도 근접 추정을 반환
         "-Pn",              # 핑 생략 (방화벽이 ICMP를 막아도 스캔)
         "--top-ports", TOP_PORTS,
         "--script", NSE_SCRIPTS,
@@ -99,26 +101,88 @@ def parse_nmap_xml(xml_text):
                 "scripts": scripts,
             }
             result["ports"].append(entry)
-            # 서비스 지문에 담긴 OS 힌트 수집
-            if svc is not None and svc.get("ostype"):
-                os_hints.append(svc.get("ostype"))
-            if svc is not None and svc.get("extrainfo"):
-                info = svc.get("extrainfo")
-                if any(k in info for k in ("Ubuntu", "Debian", "CentOS", "Win")):
-                    os_hints.append(info)
+            # 서비스 배너/버전에 담긴 배포판 힌트 수집 (최후 보조용)
+            if svc is not None:
+                for field in ("extrainfo", "version", "product"):
+                    val = svc.get(field) or ""
+                    if val:
+                        os_hints.append(val)
 
-    # nmap -O를 안 쓰므로 osmatch 대신 서비스 지문/스크립트로 OS 추정
-    osmatch = host.find("./os/osmatch")
-    if osmatch is not None:
-        result["os"] = osmatch.get("name", "")
-    elif os_hints:
-        # 가장 많이 등장한 힌트 사용
-        result["os"] = max(set(os_hints), key=os_hints.count)
+    result["os"] = _detect_os(host, os_hints)
+    result["os_evidence"] = _os_evidence(host)
 
     # -Pn이라 host state는 대개 up이다. 포트 정보가 하나라도 있어야
     # 실제로 스캔이 된 것으로 본다(전부 필터링되면 ports가 비어 있음).
     result["reachable"] = state == "up" and len(result["ports"]) > 0
     return result
+
+
+def _os_evidence(host):
+    """nmap -O 상위 추정치를 근거 문자열로 만든다."""
+    os_el = host.find("./os")
+    if os_el is None:
+        return ""
+    guesses = [
+        f"{m.get('name')} ({m.get('accuracy')}%)"
+        for m in os_el.findall("osmatch")[:4]
+    ]
+    return "nmap -O 추정: " + ", ".join(guesses) if guesses else ""
+
+
+# 배너에 나타나는 배포판 키워드 (표시명)
+_DISTRO_MARKERS = [
+    ("ubuntu", "Ubuntu"), ("debian", "Debian"), ("centos", "CentOS"),
+    ("red hat", "Red Hat"), ("rhel", "RHEL"), ("rocky", "Rocky Linux"),
+    ("almalinux", "AlmaLinux"), ("alma", "AlmaLinux"), ("fedora", "Fedora"),
+    ("amazon linux", "Amazon Linux"), ("suse", "SUSE"), ("alpine", "Alpine"),
+    ("gentoo", "Gentoo"), ("freebsd", "FreeBSD"),
+]
+
+
+# 임베디드/오탐이 잦아 커널 라벨로 신뢰하지 않을 osmatch 이름 키워드
+_NOISY_OS_NAMES = ("openwrt", "android", "nintendo", "hp ", "embedded",
+                   "router", "webcam", "printer", "switch")
+
+
+def _detect_os(host, os_hints):
+    """OS를 판정한다. 우선순위: 배너 배포판 > nmap -O 지문 > 미상.
+
+    Avast 프록시 등 오탐을 부르는 'Service Info: OS'는 무시하고,
+    -O는 osfamily(계열)만 신뢰하며 구체적 커널 라벨은 깨끗한 Linux 매치에서만 취한다.
+    """
+    hint_text = " ".join(os_hints)
+    low = hint_text.lower()
+
+    # 0) 배너에 배포판이 그대로 있으면 가장 구체적이고 정확하다.
+    distro = ""
+    for key, label in _DISTRO_MARKERS:
+        if key in low:
+            distro = label
+            break
+
+    # 1) -O 지문 집계: 계열(osfamily)만 신뢰한다.
+    #    커널/버전 라벨은 실행마다 흔들리고(2.4.18, 3.2-4.14, OpenWrt…) 앞단
+    #    보안 프록시가 있으면 특히 부정확하므로 OS 문자열에 넣지 않는다.
+    #    (상세 추정치는 os_evidence로 따로 보여준다.)
+    families = []
+    os_el = host.find("./os")
+    if os_el is not None:
+        for m in os_el.findall("osmatch"):
+            for oc in m.findall("osclass"):
+                fam = oc.get("osfamily") or ""
+                if fam:
+                    families.append(fam)
+
+    family = max(set(families), key=families.count) if families else ""
+
+    # 2) 조합해서 표기 (배너 배포판이 있으면 가장 구체적)
+    if family.lower() == "linux" or (not family and distro):
+        return f"Linux ({distro})" if distro else "Linux"
+    if family and family.lower() != "linux":
+        return family  # Windows/BSD 등은 계열만 신뢰
+
+    # 3) -O도 배너도 없으면 미상
+    return f"Linux ({distro})" if distro else ""
 
 
 def _enrich_with_nvd(checks, scan_result):

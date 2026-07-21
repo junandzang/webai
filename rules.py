@@ -139,7 +139,7 @@ def build_checklist(scan):
 
     open_ports = [p for p in scan["ports"] if p["state"] == "open"]
 
-    checks.append(_check_os(scan.get("os", "")))
+    checks.append(_check_os(scan.get("os", ""), open_ports, scan.get("os_evidence", "")))
     checks.extend(_check_ports(open_ports))
     checks.extend(_check_web(open_ports))
     checks.extend(_check_db(open_ports))
@@ -153,27 +153,46 @@ def build_checklist(scan):
     return checks
 
 
-def _check_os(os_text):
+def _server_versions(open_ports):
+    """탐지된 주요 서버 소프트웨어 버전 요약 문자열. (근거로 사용)"""
+    seen = []
+    for p in open_ports:
+        prod = p.get("product", "")
+        if prod:
+            label = (prod + " " + p.get("version", "")).strip()
+            if label not in seen:
+                seen.append(label)
+    return ", ".join(seen)
+
+
+def _check_os(os_text, open_ports, os_evidence=""):
+    versions = _server_versions(open_ports)
+    ver_note = f" 탐지된 주요 서비스 버전: {versions}." if versions else ""
+    evidence = "\n".join(x for x in (os_evidence, versions and ("서비스: " + versions)) if x)
+
     if not os_text:
         return _item(
             "os", "OS 식별 실패", "info", "info",
-            "배너/서비스 지문으로 운영체제를 특정하지 못했습니다.",
-            "관리자 권한으로 nmap -O를 실행하면 정확도가 올라갑니다.",
+            "OS 계열을 특정하지 못했습니다." + ver_note,
+            "정확한 배포판/버전은 대상 서버에서 직접 확인하세요.",
+            evidence=evidence,
         )
     low = os_text.lower()
     for marker, desc in EOL_OS_MARKERS:
         if marker in low:
             return _item(
                 "os", f"지원 종료(EOL) OS: {os_text}", "high", "fail",
-                desc + " 신규 취약점이 발견돼도 보안 패치를 받지 못합니다.",
+                desc + " 신규 취약점이 발견돼도 보안 패치를 받지 못합니다." + ver_note,
                 "지원되는 최신 OS 버전으로 업그레이드하세요.",
-                evidence=os_text,
+                evidence=evidence,
             )
     return _item(
         "os", f"운영체제: {os_text}", "info", "pass",
-        "지원 종료 목록에 해당하지 않는 OS입니다. 최신 보안 패치 적용 여부를 확인하세요.",
-        "OS 보안 업데이트를 최신 상태로 유지하세요.",
-        evidence=os_text,
+        "OS 계열을 확인했습니다. 정확한 커널·배포판 버전은 원격 지문만으로는 "
+        "특정이 어려우니(앞단 보안 프록시/방화벽 영향) 서버에서 직접 확인을 권장합니다."
+        + ver_note,
+        "OS와 주요 서비스의 보안 업데이트를 최신 상태로 유지하세요.",
+        evidence=evidence,
     )
 
 
