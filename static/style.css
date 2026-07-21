@@ -170,6 +170,38 @@ body.app {
 }
 .nav-label:first-child { margin-top: 2px; }
 
+/* 그룹 항목: 링크 + 수정 버튼을 한 줄에 겹쳐 놓는다. */
+.nav-row { position: relative; }
+
+.nav-edit {
+  position: absolute;
+  right: 9px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: #6b7280;
+}
+
+.nav-row:hover .nav-edit { display: flex; }
+.nav-row:hover .nav-count { visibility: hidden; }
+.nav-edit:hover { background: var(--accent-soft); border-color: #b9cdf5; color: var(--accent-dark); }
+.nav-edit:focus-visible { display: flex; }
+
+.hint {
+  margin: -6px 0 16px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
 .nav-item {
   position: relative;
   display: flex;

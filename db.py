@@ -177,6 +177,38 @@ def update_server(server_id, group_name, name, ip, os_name, role, status):
         return False, "이미 존재하는 서버명입니다."
 
 
+def rename_group(old_name: str, new_name: str):
+    """그룹에 속한 서버들의 group_name을 일괄 변경한다.
+
+    대상 이름의 그룹이 이미 있으면 두 그룹이 합쳐진다.
+    (성공여부, 메시지) 튜플을 반환한다.
+    """
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT COUNT(*) AS c FROM servers WHERE group_name = %s", (old_name,)
+            )
+            if cur.fetchone()["c"] == 0:
+                return False, "존재하지 않는 그룹입니다."
+
+            # 대상 이름이 이미 쓰이고 있으면 합쳐진다는 사실을 알려준다.
+            cur.execute(
+                "SELECT COUNT(*) AS c FROM servers "
+                "WHERE group_name = %s AND group_name <> %s",
+                (new_name, old_name),
+            )
+            merged = cur.fetchone()["c"] > 0
+
+            cur.execute(
+                "UPDATE servers SET group_name = %s WHERE group_name = %s",
+                (new_name, old_name),
+            )
+
+    if merged:
+        return True, f"기존 '{new_name}' 그룹으로 합쳐졌습니다."
+    return True, "그룹명이 변경되었습니다."
+
+
 def delete_server(server_id: int) -> bool:
     """서버를 삭제한다. 삭제되면 True."""
     with get_conn() as conn:

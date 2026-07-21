@@ -38,6 +38,7 @@ python -m uvicorn app:app --reload --port 8000
   - 계정/비번 오류 시: "아이디 또는 비밀번호가 올바르지 않습니다."
 - `/dashboard` : 서버 관리 대시보드 (세션 필요)
   - 왼쪽 사이드바에 **서버 그룹** 목록, 클릭하면 `/dashboard?group=WEB` 으로 이동
+  - 그룹에 마우스를 올리면 연필 버튼이 나타나 **그룹명을 수정**할 수 있음
   - 오른쪽에 해당 그룹의 서버가 **랙 서버 아이콘 카드**로 표시됨
   - 상단 통계 카드 (전체/정상/점검/중지), 검색창으로 서버명·IP·용도 필터
   - 카드에 마우스를 올리면 수정·삭제 버튼 노출
@@ -52,9 +53,13 @@ python -m uvicorn app:app --reload --port 8000
 | POST | `/api/servers` | 서버 등록 (없는 그룹명을 쓰면 그룹이 새로 생김) |
 | POST | `/api/servers/{id}` | 서버 수정 |
 | POST | `/api/servers/{id}/delete` | 서버 삭제 |
+| POST | `/api/groups/rename` | 그룹명 변경 (`old_name`, `new_name`) |
 
 입력 필드: `group_name`, `name`, `ip`, `os_name`, `role`, `status`(`ok`/`check`/`down`).
 서버명은 UNIQUE라 중복 시 400과 함께 "이미 존재하는 서버명입니다."를 반환합니다.
+
+그룹명 변경은 해당 그룹 서버들의 `group_name`을 일괄 UPDATE 합니다.
+이미 있는 그룹명으로 바꾸면 **두 그룹이 합쳐집니다**.
 
 ## 구성
 | 파일 | 설명 |

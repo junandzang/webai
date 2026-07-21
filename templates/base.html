@@ -28,19 +28,29 @@
       <nav class="nav">
         <p class="nav-label">서버 그룹</p>
         {% for g in groups %}
-        <a class="nav-item {% if g.group_name == selected %}active{% endif %}"
-           href="/dashboard?group={{ g.group_name | urlencode }}">
-          <svg class="nav-icon" viewBox="0 0 24 24" width="17" height="17" aria-hidden="true">
-            <rect x="3.5" y="5" width="17" height="5.5" rx="1.4" fill="none"
-                  stroke="currentColor" stroke-width="1.6"/>
-            <rect x="3.5" y="13.5" width="17" height="5.5" rx="1.4" fill="none"
-                  stroke="currentColor" stroke-width="1.6"/>
-            <circle cx="17.2" cy="7.75" r="1" fill="currentColor"/>
-            <circle cx="17.2" cy="16.25" r="1" fill="currentColor"/>
-          </svg>
-          <span class="nav-name">{{ g.group_name }}</span>
-          <span class="nav-count">{{ g.total }}</span>
-        </a>
+        <div class="nav-row">
+          <a class="nav-item {% if g.group_name == selected %}active{% endif %}"
+             href="/dashboard?group={{ g.group_name | urlencode }}">
+            <svg class="nav-icon" viewBox="0 0 24 24" width="17" height="17" aria-hidden="true">
+              <rect x="3.5" y="5" width="17" height="5.5" rx="1.4" fill="none"
+                    stroke="currentColor" stroke-width="1.6"/>
+              <rect x="3.5" y="13.5" width="17" height="5.5" rx="1.4" fill="none"
+                    stroke="currentColor" stroke-width="1.6"/>
+              <circle cx="17.2" cy="7.75" r="1" fill="currentColor"/>
+              <circle cx="17.2" cy="16.25" r="1" fill="currentColor"/>
+            </svg>
+            <span class="nav-name">{{ g.group_name }}</span>
+            <span class="nav-count">{{ g.total }}</span>
+          </a>
+          <button type="button" class="nav-edit" title="그룹명 수정"
+                  aria-label="{{ g.group_name }} 그룹명 수정"
+                  onclick="openGroupModal({{ g.group_name | tojson }})">
+            <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
+              <path d="M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17v3z" fill="none"
+                    stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+            </svg>
+          </button>
+        </div>
         {% else %}
         <p class="nav-empty">등록된 서버가 없습니다.</p>
         {% endfor %}
@@ -114,6 +124,27 @@
     </div>
   </div>
 
+  <!-- 그룹명 수정 팝업 -->
+  <div class="modal-overlay" id="groupModal">
+    <div class="modal">
+      <h2>그룹명 수정</h2>
+      <div class="modal-msg" id="groupMsg" role="alert"></div>
+
+      <form id="groupForm" autocomplete="off">
+        <input type="hidden" name="old_name" id="g_old">
+        <label for="g_new">그룹명</label>
+        <input type="text" id="g_new" name="new_name" maxlength="50">
+        <p class="hint">이 그룹에 속한 서버들의 그룹명이 모두 바뀝니다.
+          이미 있는 그룹명을 넣으면 두 그룹이 합쳐집니다.</p>
+
+        <div class="modal-actions">
+          <button type="button" class="cancel-btn" onclick="closeGroupModal()">취소</button>
+          <button type="submit" class="save-btn">저장</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <script>
     function toggleSidebar() {
       document.getElementById('shell').classList.toggle('collapsed');
@@ -159,8 +190,51 @@
       }
     });
 
+    /* ===== 그룹명 수정 ===== */
+    const groupModal = document.getElementById('groupModal');
+    const groupForm = document.getElementById('groupForm');
+    const groupMsg = document.getElementById('groupMsg');
+
+    function openGroupModal(name) {
+      groupMsg.className = 'modal-msg';
+      groupForm.old_name.value = name;
+      groupForm.new_name.value = name;
+      groupModal.classList.add('open');
+      groupForm.new_name.focus();
+      groupForm.new_name.select();
+    }
+    function closeGroupModal() {
+      groupModal.classList.remove('open');
+    }
+
+    groupModal.addEventListener('click', (e) => {
+      if (e.target === groupModal) closeGroupModal();
+    });
+
+    groupForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      groupMsg.className = 'modal-msg';
+      const data = new URLSearchParams(new FormData(groupForm));
+      try {
+        const res = await fetch('/api/groups/rename', { method: 'POST', body: data });
+        const json = await res.json();
+        groupMsg.textContent = json.message;
+        groupMsg.className = 'modal-msg ' + (json.ok ? 'ok' : 'error') + ' show';
+        // 바뀐 그룹으로 이동해 결과를 바로 보여준다.
+        if (json.ok) {
+          const target = groupForm.new_name.value.trim();
+          setTimeout(() => {
+            location.href = '/dashboard?group=' + encodeURIComponent(target);
+          }, 700);
+        }
+      } catch (err) {
+        groupMsg.textContent = '요청 처리 중 오류가 발생했습니다.';
+        groupMsg.className = 'modal-msg error show';
+      }
+    });
+
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') closePwModal();
+      if (e.key === 'Escape') { closePwModal(); closeGroupModal(); }
     });
   </script>
   {% block scripts %}{% endblock %}

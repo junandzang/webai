@@ -19,6 +19,7 @@ from db import (
     get_operator,
     list_groups,
     list_servers,
+    rename_group,
     status_summary,
     update_password,
     update_server,
@@ -28,6 +29,9 @@ from db import (
 BASE_DIR = Path(__file__).resolve().parent
 
 SESSION_EXPIRED = "세션이 만료되었습니다. 다시 로그인해주세요."
+
+# servers.group_name 컬럼 길이와 맞춘다.
+GROUP_NAME_MAX = 50
 
 app = FastAPI(title="운영자 사이트")
 app.add_middleware(SessionMiddleware, secret_key=config.SESSION_SECRET)
@@ -245,3 +249,31 @@ def api_delete_server(request: Request, server_id: int):
             {"ok": False, "message": "이미 삭제된 서버입니다."}, status_code=404
         )
     return JSONResponse({"ok": True, "message": "서버가 삭제되었습니다."})
+
+
+@app.post("/api/groups/rename")
+def api_rename_group(
+    request: Request,
+    old_name: str = Form(default=""),
+    new_name: str = Form(default=""),
+):
+    if not request.session.get("username"):
+        return JSONResponse({"ok": False, "message": SESSION_EXPIRED}, status_code=401)
+
+    old_name, new_name = old_name.strip(), new_name.strip()
+    if not old_name or not new_name:
+        return JSONResponse(
+            {"ok": False, "message": "그룹명을 입력해주세요."}, status_code=400
+        )
+    if len(new_name) > GROUP_NAME_MAX:
+        return JSONResponse(
+            {"ok": False, "message": f"그룹명은 {GROUP_NAME_MAX}자 이하여야 합니다."},
+            status_code=400,
+        )
+    if old_name == new_name:
+        return JSONResponse(
+            {"ok": False, "message": "기존 그룹명과 동일합니다."}, status_code=400
+        )
+
+    ok, message = rename_group(old_name, new_name)
+    return JSONResponse({"ok": ok, "message": message}, status_code=200 if ok else 404)
