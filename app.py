@@ -12,9 +12,22 @@ from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
 import config
-from db import get_operator, update_password, verify_password
+from db import (
+    SERVER_STATUS,
+    create_server,
+    delete_server,
+    get_operator,
+    list_groups,
+    list_servers,
+    status_summary,
+    update_password,
+    update_server,
+    verify_password,
+)
 
 BASE_DIR = Path(__file__).resolve().parent
+
+SESSION_EXPIRED = "세션이 만료되었습니다. 다시 로그인해주세요."
 
 app = FastAPI(title="운영자 사이트")
 app.add_middleware(SessionMiddleware, secret_key=config.SESSION_SECRET)
@@ -80,14 +93,31 @@ def login_submit(
 
 
 @app.get("/dashboard", response_class=HTMLResponse)
-def dashboard(request: Request):
+def dashboard(request: Request, group: str = ""):
     username = request.session.get("username")
     if not username:
         return RedirectResponse("/login", status_code=303)
+
+    groups = list_groups()
+    group_names = [g["group_name"] for g in groups]
+
+    # 요청한 그룹이 없으면 첫 번째 그룹을 기본 선택한다.
+    selected = group if group in group_names else (group_names[0] if group_names else "")
+    servers = list_servers(selected) if selected else []
+    selected_group = next((g for g in groups if g["group_name"] == selected), None)
+
     return templates.TemplateResponse(
         request=request,
         name="dashboard.html",
-        context={"username": username},
+        context={
+            "username": username,
+            "groups": groups,
+            "selected": selected,
+            "selected_group": selected_group,
+            "servers": servers,
+            "summary": status_summary(),
+            "status_labels": SERVER_STATUS,
+        },
     )
 
 
@@ -100,10 +130,7 @@ def change_password(
 ):
     username = request.session.get("username")
     if not username:
-        return JSONResponse(
-            {"ok": False, "message": "세션이 만료되었습니다. 다시 로그인해주세요."},
-            status_code=401,
-        )
+        return JSONResponse({"ok": False, "message": SESSION_EXPIRED}, status_code=401)
 
     if not current_password or not new_password or not confirm_password:
         return JSONResponse(
@@ -145,3 +172,76 @@ def change_password(
 def logout(request: Request):
     request.session.clear()
     return RedirectResponse("/login", status_code=303)
+
+
+# ===== 서버 관리 API =====
+
+
+def _validate_server_form(group_name, name, status):
+    """서버 입력값을 검증한다. 문제가 없으면 None, 있으면 오류 메시지를 반환한다."""
+    if not group_name or not name:
+        return "그룹명과 서버명은 필수입니다."
+    if status not in SERVER_STATUS:
+        return "상태값이 올바르지 않습니다."
+    return None
+
+
+@app.post("/api/servers")
+def api_create_server(
+    request: Request,
+    group_name: str = Form(default=""),
+    name: str = Form(default=""),
+    ip: str = Form(default=""),
+    os_name: str = Form(default=""),
+    role: str = Form(default=""),
+    status: str = Form(default="ok"),
+):
+    if not request.session.get("username"):
+        return JSONResponse({"ok": False, "message": SESSION_EXPIRED}, status_code=401)
+
+    group_name, name = group_name.strip(), name.strip()
+    error = _validate_server_form(group_name, name, status)
+    if error:
+        return JSONResponse({"ok": False, "message": error}, status_code=400)
+
+    ok, message = create_server(
+        group_name, name, ip.strip(), os_name.strip(), role.strip(), status
+    )
+    return JSONResponse({"ok": ok, "message": message}, status_code=200 if ok else 400)
+
+
+@app.post("/api/servers/{server_id}")
+def api_update_server(
+    request: Request,
+    server_id: int,
+    group_name: str = Form(default=""),
+    name: str = Form(default=""),
+    ip: str = Form(default=""),
+    os_name: str = Form(default=""),
+    role: str = Form(default=""),
+    status: str = Form(default="ok"),
+):
+    if not request.session.get("username"):
+        return JSONResponse({"ok": False, "message": SESSION_EXPIRED}, status_code=401)
+
+    group_name, name = group_name.strip(), name.strip()
+    error = _validate_server_form(group_name, name, status)
+    if error:
+        return JSONResponse({"ok": False, "message": error}, status_code=400)
+
+    ok, message = update_server(
+        server_id, group_name, name, ip.strip(), os_name.strip(), role.strip(), status
+    )
+    return JSONResponse({"ok": ok, "message": message}, status_code=200 if ok else 400)
+
+
+@app.post("/api/servers/{server_id}/delete")
+def api_delete_server(request: Request, server_id: int):
+    if not request.session.get("username"):
+        return JSONResponse({"ok": False, "message": SESSION_EXPIRED}, status_code=401)
+
+    if not delete_server(server_id):
+        return JSONResponse(
+            {"ok": False, "message": "이미 삭제된 서버입니다."}, status_code=404
+        )
+    return JSONResponse({"ok": True, "message": "서버가 삭제되었습니다."})

@@ -1,6 +1,8 @@
-"""최초 1회 실행: AI 데이터베이스와 operators 테이블을 만들고 admin 계정을 시드한다.
+"""최초 1회 실행: AI 데이터베이스와 테이블을 만들고 초기 데이터를 시드한다.
 
 실행:  python init_db.py
+
+여러 번 실행해도 안전하다 (CREATE TABLE IF NOT EXISTS / INSERT IGNORE).
 """
 
 import sys
@@ -9,6 +11,19 @@ import pymysql
 
 import config
 from db import create_operator
+
+# (그룹, 서버명, IP, OS, 용도, 상태)
+SAMPLE_SERVERS = [
+    ("WEB", "WEB-01", "10.0.1.11", "Ubuntu 22.04", "웹 서버", "ok"),
+    ("WEB", "WEB-02", "10.0.1.12", "Ubuntu 22.04", "웹 서버", "ok"),
+    ("WEB", "WEB-03", "10.0.1.13", "Ubuntu 22.04", "웹 서버 (예비)", "check"),
+    ("WAS", "WAS-01", "10.0.2.11", "Rocky Linux 9", "애플리케이션 서버", "ok"),
+    ("WAS", "WAS-02", "10.0.2.12", "Rocky Linux 9", "애플리케이션 서버", "ok"),
+    ("DB", "DB-01", "10.0.3.11", "Rocky Linux 9", "MariaDB 마스터", "ok"),
+    ("DB", "DB-02", "10.0.3.12", "Rocky Linux 9", "MariaDB 슬레이브", "down"),
+    ("API", "API-01", "10.0.4.11", "Ubuntu 22.04", "API 게이트웨이", "ok"),
+    ("API", "API-02", "10.0.4.12", "Ubuntu 22.04", "API 게이트웨이", "ok"),
+]
 
 
 def main():
@@ -47,9 +62,44 @@ def main():
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
                 """
             )
-    print(f"[완료] 데이터베이스 '{config.DB_NAME}'와 'operators' 테이블을 준비했습니다.")
 
-    # 4) 초기 admin 계정 시드
+            # 4) servers 테이블 생성
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS servers (
+                    id         INT AUTO_INCREMENT PRIMARY KEY,
+                    group_name VARCHAR(50)  NOT NULL,
+                    name       VARCHAR(100) NOT NULL UNIQUE,
+                    ip         VARCHAR(45)  NOT NULL DEFAULT '',
+                    os         VARCHAR(100) NOT NULL DEFAULT '',
+                    role       VARCHAR(100) NOT NULL DEFAULT '',
+                    status     VARCHAR(20)  NOT NULL DEFAULT 'ok',
+                    sort_order INT          NOT NULL DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_group (group_name)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                """
+            )
+
+            # 5) 샘플 서버 시드 (이미 있으면 건너뜀)
+            cur.executemany(
+                "INSERT IGNORE INTO servers "
+                "(group_name, name, ip, os, role, status) "
+                "VALUES (%s, %s, %s, %s, %s, %s)",
+                SAMPLE_SERVERS,
+            )
+            seeded = cur.rowcount
+
+    print(
+        f"[완료] 데이터베이스 '{config.DB_NAME}'에 "
+        "'operators', 'servers' 테이블을 준비했습니다."
+    )
+    if seeded:
+        print(f"[완료] 샘플 서버 {seeded}대를 등록했습니다.")
+    else:
+        print("[안내] 샘플 서버가 이미 등록되어 있어 건너뜁니다.")
+
+    # 6) 초기 admin 계정 시드
     created = create_operator(
         config.INITIAL_ADMIN_USERNAME, config.INITIAL_ADMIN_PASSWORD
     )

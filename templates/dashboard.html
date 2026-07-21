@@ -1,93 +1,301 @@
-<!DOCTYPE html>
-<html lang="ko">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>운영자 대시보드</title>
-  <link rel="stylesheet" href="/static/style.css">
-</head>
-<body>
-  <div class="login-wrap">
-    <div class="login-card">
-      <h1>환영합니다, {{ username }}님</h1>
-      <p class="subtitle">운영자 페이지에 로그인되었습니다.</p>
+{% extends "base.html" %}
 
-      <button type="button" class="secondary-btn" onclick="openPwModal()">비밀번호 변경</button>
-      <a class="logout-btn" href="/logout">로그아웃</a>
-    </div>
+{% block title %}서버 대시보드{% endblock %}
+{% block page_title %}대시보드{% endblock %}
+
+{% block topbar_actions %}
+  <div class="search">
+    <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
+      <circle cx="11" cy="11" r="6" fill="none" stroke="currentColor" stroke-width="1.8"/>
+      <path d="m15.5 15.5 3.5 3.5" fill="none" stroke="currentColor"
+            stroke-width="1.8" stroke-linecap="round"/>
+    </svg>
+    <input type="text" id="serverSearch" placeholder="서버 검색 (서버명·IP·용도)">
   </div>
+  <button type="button" class="primary-btn" onclick="openServerModal()">
+    <span class="plus">+</span> 서버 추가
+  </button>
+{% endblock %}
 
-  <!-- 비밀번호 변경 팝업 -->
-  <div class="modal-overlay" id="pwModal">
+{% block content %}
+  {% if selected_group %}
+  <section class="hero">
+    <div class="hero-head">
+      <span class="chip">서버 그룹</span>
+      <strong class="hero-title">{{ selected }}</strong>
+      <span class="chip chip-soft">{{ selected_group.total }}대</span>
+    </div>
+    <p class="hero-sub">
+      정상 {{ selected_group.ok }} · 점검 {{ selected_group.check }} ·
+      중지 {{ selected_group.down_cnt }}
+    </p>
+    <div class="hero-right">전체 {{ summary.total }}대 중 {{ selected_group.total }}대</div>
+  </section>
+  {% endif %}
+
+  <section class="stats">
+    <div class="stat">
+      <p class="stat-label">전체 서버</p>
+      <p class="stat-value">{{ summary.total }}</p>
+    </div>
+    <div class="stat">
+      <p class="stat-label">정상</p>
+      <p class="stat-value ok">{{ summary.ok }}</p>
+    </div>
+    <div class="stat">
+      <p class="stat-label">점검</p>
+      <p class="stat-value warn">{{ summary.check }}</p>
+    </div>
+    <div class="stat">
+      <p class="stat-label">중지</p>
+      <p class="stat-value down">{{ summary.down_cnt }}</p>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>{{ selected or '서버' }} 목록</h2>
+      <span class="panel-sub">서버 카드에 마우스를 올리면 수정·삭제할 수 있습니다.</span>
+    </div>
+
+    {% if servers %}
+    <div class="server-grid" id="serverGrid">
+      {% for s in servers %}
+      <article class="server-card status-{{ s.status }}"
+               data-search="{{ (s.name ~ ' ' ~ s.ip ~ ' ' ~ s.role ~ ' ' ~ s.os) | lower }}"
+               data-id="{{ s.id }}"
+               data-group="{{ s.group_name }}"
+               data-name="{{ s.name }}"
+               data-ip="{{ s.ip }}"
+               data-os="{{ s.os }}"
+               data-role="{{ s.role }}"
+               data-status="{{ s.status }}">
+        <div class="card-tools">
+          <button type="button" class="tool" title="수정"
+                  onclick="openServerModal(this.closest('.server-card'))">
+            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+              <path d="M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17v3z" fill="none"
+                    stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+            </svg>
+          </button>
+          <button type="button" class="tool danger" title="삭제"
+                  onclick="askDelete(this.closest('.server-card'))">
+            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+              <path d="M6 7h12M9.5 7V5.5h5V7M8 7l.8 12h6.4L16 7" fill="none"
+                    stroke="currentColor" stroke-width="1.7"
+                    stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+        </div>
+
+        <!-- 3U 랙 서버 아이콘 -->
+        <svg class="rack" viewBox="0 0 72 72" aria-hidden="true">
+          <rect x="10" y="12" width="52" height="14" rx="3" class="unit"/>
+          <rect x="10" y="29" width="52" height="14" rx="3" class="unit"/>
+          <rect x="10" y="46" width="52" height="14" rx="3" class="unit"/>
+          {% for y in [19, 36, 53] %}
+          <line x1="17" y1="{{ y }}" x2="33" y2="{{ y }}" class="vent"/>
+          <circle cx="49" cy="{{ y }}" r="2.4" class="led"/>
+          <circle cx="56" cy="{{ y }}" r="1.6" class="led-dim"/>
+          {% endfor %}
+        </svg>
+
+        <h3 class="server-name">{{ s.name }}</h3>
+        <p class="server-status"><span class="dot"></span>{{ status_labels[s.status] }}</p>
+
+        <dl class="server-meta">
+          <div><dt>IP</dt><dd>{{ s.ip or '-' }}</dd></div>
+          <div><dt>OS</dt><dd>{{ s.os or '-' }}</dd></div>
+          <div><dt>용도</dt><dd>{{ s.role or '-' }}</dd></div>
+        </dl>
+      </article>
+      {% endfor %}
+    </div>
+    <p class="empty" id="noResult" hidden>검색 결과가 없습니다.</p>
+    {% else %}
+    <div class="empty">
+      <p>이 그룹에 등록된 서버가 없습니다.</p>
+      <button type="button" class="primary-btn" onclick="openServerModal()">
+        <span class="plus">+</span> 서버 추가
+      </button>
+    </div>
+    {% endif %}
+  </section>
+
+  <!-- 서버 등록/수정 팝업 -->
+  <div class="modal-overlay" id="serverModal">
     <div class="modal">
-      <h2>비밀번호 변경</h2>
+      <h2 id="serverModalTitle">서버 추가</h2>
+      <div class="modal-msg" id="serverMsg" role="alert"></div>
 
-      <div class="modal-msg" id="pwMsg" role="alert"></div>
+      <form id="serverForm" autocomplete="off">
+        <label for="f_group">그룹명</label>
+        <input type="text" id="f_group" name="group_name" list="groupList"
+               placeholder="예: WEB (새 그룹명을 입력하면 그룹이 생성됩니다)">
+        <datalist id="groupList">
+          {% for g in groups %}<option value="{{ g.group_name }}"></option>{% endfor %}
+        </datalist>
 
-      <form id="pwForm" autocomplete="off">
-        <label for="current_password">현재 비밀번호</label>
-        <input type="password" id="current_password" name="current_password">
+        <label for="f_name">서버명</label>
+        <input type="text" id="f_name" name="name" placeholder="예: WEB-04">
 
-        <label for="new_password">새 비밀번호</label>
-        <input type="password" id="new_password" name="new_password">
+        <label for="f_ip">IP</label>
+        <input type="text" id="f_ip" name="ip" placeholder="예: 10.0.1.14">
 
-        <label for="confirm_password">새 비밀번호 확인</label>
-        <input type="password" id="confirm_password" name="confirm_password">
+        <label for="f_os">OS</label>
+        <input type="text" id="f_os" name="os_name" placeholder="예: Ubuntu 22.04">
+
+        <label for="f_role">용도</label>
+        <input type="text" id="f_role" name="role" placeholder="예: 웹 서버">
+
+        <label for="f_status">상태</label>
+        <select id="f_status" name="status">
+          {% for code, label in status_labels.items() %}
+          <option value="{{ code }}">{{ label }}</option>
+          {% endfor %}
+        </select>
 
         <div class="modal-actions">
-          <button type="button" class="cancel-btn" onclick="closePwModal()">취소</button>
+          <button type="button" class="cancel-btn" onclick="closeServerModal()">취소</button>
           <button type="submit" class="save-btn">저장</button>
         </div>
       </form>
     </div>
   </div>
 
-  <script>
-    const modal = document.getElementById('pwModal');
-    const form = document.getElementById('pwForm');
-    const msg = document.getElementById('pwMsg');
+  <!-- 삭제 확인 팝업 -->
+  <div class="modal-overlay" id="delModal">
+    <div class="modal">
+      <h2>서버 삭제</h2>
+      <div class="modal-msg" id="delMsg" role="alert"></div>
+      <p class="confirm-text"><strong id="delName"></strong> 서버를 삭제할까요?<br>
+        삭제한 서버는 되돌릴 수 없습니다.</p>
+      <div class="modal-actions">
+        <button type="button" class="cancel-btn" onclick="closeDelModal()">취소</button>
+        <button type="button" class="danger-btn" onclick="confirmDelete()">삭제</button>
+      </div>
+    </div>
+  </div>
+{% endblock %}
 
-    function openPwModal() {
-      form.reset();
-      hideMsg();
-      modal.classList.add('open');
-      document.getElementById('current_password').focus();
-    }
-    function closePwModal() {
-      modal.classList.remove('open');
-    }
-    function showMsg(text, ok) {
-      msg.textContent = text;
-      msg.className = 'modal-msg ' + (ok ? 'ok' : 'error') + ' show';
-    }
-    function hideMsg() {
-      msg.className = 'modal-msg';
-      msg.textContent = '';
-    }
+{% block scripts %}
+<script>
+  const currentGroup = {{ selected | tojson }};
 
-    // 오버레이 바깥 클릭 시 닫기
-    modal.addEventListener('click', (e) => {
-      if (e.target === modal) closePwModal();
+  /* ===== 검색 필터 ===== */
+  const searchInput = document.getElementById('serverSearch');
+  const grid = document.getElementById('serverGrid');
+  const noResult = document.getElementById('noResult');
+
+  if (searchInput && grid) {
+    searchInput.addEventListener('input', () => {
+      const q = searchInput.value.trim().toLowerCase();
+      let shown = 0;
+      grid.querySelectorAll('.server-card').forEach((card) => {
+        const hit = !q || card.dataset.search.includes(q);
+        card.hidden = !hit;
+        if (hit) shown++;
+      });
+      noResult.hidden = shown > 0;
     });
+  }
 
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      hideMsg();
-      const data = new URLSearchParams(new FormData(form));
-      try {
-        const res = await fetch('/change-password', { method: 'POST', body: data });
-        const json = await res.json();
-        if (json.ok) {
-          showMsg(json.message, true);
-          form.reset();
-          setTimeout(closePwModal, 1200);
-        } else {
-          showMsg(json.message, false);
-        }
-      } catch (err) {
-        showMsg('요청 처리 중 오류가 발생했습니다.', false);
+  /* ===== 등록 / 수정 ===== */
+  const serverModal = document.getElementById('serverModal');
+  const serverForm = document.getElementById('serverForm');
+  const serverMsg = document.getElementById('serverMsg');
+  const serverTitle = document.getElementById('serverModalTitle');
+  let editingId = null;
+
+  function openServerModal(card) {
+    serverForm.reset();
+    serverMsg.className = 'modal-msg';
+
+    if (card) {
+      editingId = card.dataset.id;
+      serverTitle.textContent = '서버 수정';
+      serverForm.group_name.value = card.dataset.group;
+      serverForm.name.value = card.dataset.name;
+      serverForm.ip.value = card.dataset.ip;
+      serverForm.os_name.value = card.dataset.os;
+      serverForm.role.value = card.dataset.role;
+      serverForm.status.value = card.dataset.status;
+    } else {
+      editingId = null;
+      serverTitle.textContent = '서버 추가';
+      serverForm.group_name.value = currentGroup;
+    }
+
+    serverModal.classList.add('open');
+    serverForm.name.focus();
+  }
+  function closeServerModal() {
+    serverModal.classList.remove('open');
+  }
+  function showServerMsg(text, ok) {
+    serverMsg.textContent = text;
+    serverMsg.className = 'modal-msg ' + (ok ? 'ok' : 'error') + ' show';
+  }
+
+  serverModal.addEventListener('click', (e) => {
+    if (e.target === serverModal) closeServerModal();
+  });
+
+  serverForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    serverMsg.className = 'modal-msg';
+    const url = editingId ? `/api/servers/${editingId}` : '/api/servers';
+    const data = new URLSearchParams(new FormData(serverForm));
+    try {
+      const res = await fetch(url, { method: 'POST', body: data });
+      const json = await res.json();
+      showServerMsg(json.message, json.ok);
+      // 저장된 그룹으로 이동해 결과를 바로 보여준다.
+      if (json.ok) {
+        const target = serverForm.group_name.value.trim();
+        setTimeout(() => {
+          location.href = '/dashboard?group=' + encodeURIComponent(target);
+        }, 700);
       }
-    });
-  </script>
-</body>
-</html>
+    } catch (err) {
+      showServerMsg('요청 처리 중 오류가 발생했습니다.', false);
+    }
+  });
+
+  /* ===== 삭제 ===== */
+  const delModal = document.getElementById('delModal');
+  const delMsg = document.getElementById('delMsg');
+  let deletingId = null;
+
+  function askDelete(card) {
+    deletingId = card.dataset.id;
+    delMsg.className = 'modal-msg';
+    document.getElementById('delName').textContent = card.dataset.name;
+    delModal.classList.add('open');
+  }
+  function closeDelModal() {
+    delModal.classList.remove('open');
+  }
+
+  delModal.addEventListener('click', (e) => {
+    if (e.target === delModal) closeDelModal();
+  });
+
+  async function confirmDelete() {
+    try {
+      const res = await fetch(`/api/servers/${deletingId}/delete`, { method: 'POST' });
+      const json = await res.json();
+      delMsg.textContent = json.message;
+      delMsg.className = 'modal-msg ' + (json.ok ? 'ok' : 'error') + ' show';
+      if (json.ok) setTimeout(() => location.reload(), 700);
+    } catch (err) {
+      delMsg.textContent = '요청 처리 중 오류가 발생했습니다.';
+      delMsg.className = 'modal-msg error show';
+    }
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { closeServerModal(); closeDelModal(); }
+  });
+</script>
+{% endblock %}
