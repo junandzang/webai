@@ -335,31 +335,43 @@ def set_scan_done(scan_id: int, os_detected: str, scan_source: str, counts: dict
             )
 
 
-# 심각도별 점수 가중치 (점수 계산·위험도 표기에 공용)
-SEVERITY_WEIGHT = {"critical": 5, "high": 4, "medium": 3, "low": 2, "info": 1}
 # 우리 위험도 -> SolidStep 5단계 라벨
 SEVERITY_KO = {"critical": "최상", "high": "상", "medium": "중",
                "low": "하", "info": "최하"}
 # 체크 결과 -> SolidStep 3분류
 RESULT_GROUP = {"fail": "취약", "warn": "취약", "info": "수동 점검", "pass": "양호"}
 
+# 점수 감점: 취약 항목 1건당 심각도별 기본 감점 점수
+SEVERITY_PENALTY = {"critical": 15.0, "high": 8.0, "medium": 4.0, "low": 1.5, "info": 0.0}
+# 결과별 감점 계수 (확정 취약보다 '주의'는 가볍게)
+RESULT_FACTOR = {"fail": 1.0, "warn": 0.6}
+# 낮은 심각도(하) 항목이 많아도 점수를 과도하게 깎지 않도록 tier별 감점 상한
+SEVERITY_CAP = {"low": 15.0, "info": 0.0}
+
 
 def compute_score(checks) -> float:
     """체크리스트로 0~100 점수를 계산한다.
 
-    심각도 가중치 기준, 양호(pass)·정보(info) 항목이 차지하는 비율을 점수로 본다.
-    취약(fail/warn)이 많고 심각할수록 점수가 낮아진다.
+    100점에서 시작해 취약(fail/warn) 항목마다 심각도별로 감점한다.
+    심각할수록 크게, 낮은 등급은 조금만 깎이며, '하' 등급은 총 감점에
+    상한을 둬(SEVERITY_CAP) 열린 포트가 많아도 점수가 무너지지 않는다.
+    양호(pass)·수동 점검(info)은 감점하지 않는다.
     """
-    total = 0.0
-    got = 0.0
+    tier_penalty = {}
     for c in checks:
-        w = SEVERITY_WEIGHT.get(c["severity"], 1)
-        total += w
-        if c["result"] in ("pass", "info"):
-            got += w
-    if total == 0:
-        return 100.0
-    return round(100.0 * got / total, 1)
+        factor = RESULT_FACTOR.get(c["result"], 0.0)  # pass/info -> 0
+        if not factor:
+            continue
+        sev = c["severity"]
+        tier_penalty[sev] = tier_penalty.get(sev, 0.0) + \
+            SEVERITY_PENALTY.get(sev, 1.0) * factor
+
+    penalty = 0.0
+    for sev, p in tier_penalty.items():
+        cap = SEVERITY_CAP.get(sev)
+        penalty += min(p, cap) if cap is not None else p
+
+    return round(max(0.0, 100.0 - penalty), 1)
 
 
 def add_check(scan_id: int, check: dict):
