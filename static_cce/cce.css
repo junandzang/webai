@@ -30,7 +30,7 @@ input, select, button { font-family: inherit; }
 
 /* ===== 로그인 (빨간 테마) ===== */
 body.cce-login {
-  background: linear-gradient(135deg, #8f1a2c 0%, #55101c 100%);
+  background: linear-gradient(135deg, #4f6cf7 0%, #6a3ff5 100%);
 }
 .cce-login .login-wrap {
   min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px;
