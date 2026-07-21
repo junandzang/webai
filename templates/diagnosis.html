@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
-{% block title %}진단 실행{% endblock %}
-{% block page_title %}진단 실행{% endblock %}
+{% block title %}서버 검사{% endblock %}
+{% block page_title %}서버 검사{% endblock %}
 
 {% block content %}
 <div class="diag-wrap">
@@ -40,7 +40,17 @@
 
   <!-- 오른쪽: 자산 정보 -->
   <section class="diag-assets">
-    <div class="diag-assets-head">자산 정보</div>
+    <div class="diag-assets-head">
+      <span>자산 정보</span>
+      <div class="avg-wrap">
+        <span class="avg-label">평균 점수</span>
+        <span class="avg-value score-{{ 'good' if avg_score and avg_score>=90 else 'fair' if avg_score and avg_score>=80 else 'warn' if avg_score and avg_score>=60 else 'bad' if avg_score else 'none' }}"
+              id="avgScore" data-count="{{ scored_count }}">
+          {{ avg_score if avg_score is not none else '-' }}
+        </span>
+        <span class="avg-sub">검사 {{ scored_count }}대</span>
+      </div>
+    </div>
     <div class="diag-asset-list">
       {% for a in assets %}
       <article class="diag-asset" data-id="{{ a.id }}">
@@ -100,6 +110,21 @@
     const box = card ? card.querySelector('.da-score') : null;
     if (box && data.score != null) { box.textContent = data.score; box.className = 'da-score score-'+SCORE_COLOR(data.score); }
     else if (box && data.score == null) { box.textContent = '미진단'; box.className = 'da-score score-none'; }
+    recomputeAvg();
+  }
+
+  /* 검사된 서버 점수로 평균 점수 갱신 */
+  const avgEl = document.getElementById('avgScore');
+  const avgSub = document.querySelector('.avg-sub');
+  function recomputeAvg() {
+    const nums = [...document.querySelectorAll('.da-score')]
+      .map(b => parseFloat(b.textContent)).filter(n => !isNaN(n));
+    if (avgSub) avgSub.textContent = '검사 ' + nums.length + '대';
+    if (!avgEl) return;
+    if (!nums.length) { avgEl.textContent = '-'; avgEl.className = 'avg-value score-none'; return; }
+    const avg = Math.round(nums.reduce((a,b)=>a+b,0) / nums.length * 10) / 10;
+    avgEl.textContent = avg;
+    avgEl.className = 'avg-value score-' + SCORE_COLOR(avg);
   }
   async function poll(id) {
     const el = document.querySelector(`.scan-state[data-id="${id}"]`);

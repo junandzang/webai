@@ -430,6 +430,9 @@ def diagnosis(request: Request):
     for r in rows:
         r["score_color"] = _score_color(r["score"])
 
+    scored = [r["score"] for r in rows if r["score"] is not None]
+    avg_score = round(sum(scored) / len(scored), 1) if scored else None
+
     return templates.TemplateResponse(
         request=request,
         name="diagnosis.html",
@@ -439,6 +442,8 @@ def diagnosis(request: Request):
             "selected": "",
             "active_page": "diagnosis",
             "assets": rows,
+            "avg_score": avg_score,
+            "scored_count": len(scored),
             "status_labels": SERVER_STATUS,
         },
     )
