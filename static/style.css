@@ -162,6 +162,9 @@ body.app {
 }
 
 .nav-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   margin: 14px 10px 7px;
   font-size: 11px;
   font-weight: 700;
@@ -170,18 +173,41 @@ body.app {
 }
 .nav-label:first-child { margin-top: 2px; }
 
+.nav-add {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: #fff;
+  color: #6b7280;
+}
+.nav-add:hover {
+  background: var(--accent-soft);
+  border-color: #b9cdf5;
+  color: var(--accent-dark);
+}
+
 /* 그룹 항목: 링크 + 수정 버튼을 한 줄에 겹쳐 놓는다. */
 .nav-row { position: relative; }
 
-.nav-edit {
+.nav-tools {
   position: absolute;
-  right: 9px;
+  right: 8px;
   top: 50%;
   transform: translateY(-50%);
+  display: none;
+  gap: 3px;
+}
+
+.nav-edit, .nav-del {
   width: 22px;
   height: 22px;
   padding: 0;
-  display: none;
+  display: flex;
   align-items: center;
   justify-content: center;
   border: 1px solid var(--line);
@@ -190,10 +216,13 @@ body.app {
   color: #6b7280;
 }
 
-.nav-row:hover .nav-edit { display: flex; }
+/* 도구 버튼이 보일 때는 개수 뱃지를 감춰 자리를 내준다. */
+.nav-row:hover .nav-tools,
+.nav-tools:focus-within { display: flex; }
 .nav-row:hover .nav-count { visibility: hidden; }
+
 .nav-edit:hover { background: var(--accent-soft); border-color: #b9cdf5; color: var(--accent-dark); }
-.nav-edit:focus-visible { display: flex; }
+.nav-del:hover { background: #fef2f2; border-color: #fecaca; color: #b91c1c; }
 
 .hint {
   margin: -6px 0 16px;
@@ -593,6 +622,14 @@ body.app {
 
 .danger-btn { background: var(--down); }
 .danger-btn:hover { background: #dc2626; }
+
+/* 서버가 남아 있는 그룹은 삭제 버튼을 비활성화한다. */
+button:disabled,
+button:disabled:hover {
+  background: #e5e7eb;
+  color: #9ca3af;
+  cursor: not-allowed;
+}
 
 .modal-msg {
   display: none;

@@ -38,7 +38,9 @@ python -m uvicorn app:app --reload --port 8000
   - 계정/비번 오류 시: "아이디 또는 비밀번호가 올바르지 않습니다."
 - `/dashboard` : 서버 관리 대시보드 (세션 필요)
   - 왼쪽 사이드바에 **서버 그룹** 목록, 클릭하면 `/dashboard?group=WEB` 으로 이동
-  - 그룹에 마우스를 올리면 연필 버튼이 나타나 **그룹명을 수정**할 수 있음
+  - `서버 그룹` 라벨의 **+ 버튼으로 빈 그룹을 추가** (서버 0대인 그룹도 유지됨)
+  - 그룹에 마우스를 올리면 **연필(이름 수정) · 휴지통(삭제)** 버튼이 나타남
+  - 그룹 삭제는 **서버가 0대일 때만** 가능 (서버가 남아 있으면 버튼이 비활성화됨)
   - 오른쪽에 해당 그룹의 서버가 **랙 서버 아이콘 카드**로 표시됨
   - 상단 통계 카드 (전체/정상/점검/중지), 검색창으로 서버명·IP·용도 필터
   - 카드에 마우스를 올리면 수정·삭제 버튼 노출
@@ -53,7 +55,9 @@ python -m uvicorn app:app --reload --port 8000
 | POST | `/api/servers` | 서버 등록 (없는 그룹명을 쓰면 그룹이 새로 생김) |
 | POST | `/api/servers/{id}` | 서버 수정 |
 | POST | `/api/servers/{id}/delete` | 서버 삭제 |
+| POST | `/api/groups` | 빈 그룹 생성 (`name`) |
 | POST | `/api/groups/rename` | 그룹명 변경 (`old_name`, `new_name`) |
+| POST | `/api/groups/delete` | 그룹 삭제 (`name`) — 서버가 남아 있으면 400 |
 
 입력 필드: `group_name`, `name`, `ip`, `os_name`, `role`, `status`(`ok`/`check`/`down`).
 서버명은 UNIQUE라 중복 시 400과 함께 "이미 존재하는 서버명입니다."를 반환합니다.
@@ -75,7 +79,11 @@ python -m uvicorn app:app --reload --port 8000
 ## DB 테이블
 - `operators` : 운영자 계정 (`username`, `password_hash`)
 - `servers` : 서버 목록 (`group_name`, `name`, `ip`, `os`, `role`, `status`, `sort_order`)
-  - 그룹은 별도 테이블 없이 `group_name` 컬럼으로 관리합니다.
+- `server_groups` : 그룹 목록 (`name`, `sort_order`)
+  - 사이드바 메뉴는 이 테이블 기준이라 **서버가 0대인 그룹도 유지**됩니다.
+  - `servers.group_name`은 FK가 아닌 문자열이며, 서버 등록·수정 시 새 그룹명이 들어오면
+    자동으로 `server_groups`에 등록됩니다.
+  - `init_db.py`는 기존 설치에서도 쓰이던 그룹명을 자동으로 백필합니다.
 
 ## 보안 참고
 - 비밀번호는 bcrypt 해시로 저장됩니다.

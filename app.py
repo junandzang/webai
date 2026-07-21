@@ -14,7 +14,9 @@ from starlette.middleware.sessions import SessionMiddleware
 import config
 from db import (
     SERVER_STATUS,
+    create_group,
     create_server,
+    delete_group,
     delete_server,
     get_operator,
     list_groups,
@@ -251,6 +253,48 @@ def api_delete_server(request: Request, server_id: int):
     return JSONResponse({"ok": True, "message": "서버가 삭제되었습니다."})
 
 
+def _validate_group_name(name):
+    """그룹명을 검증한다. 문제가 없으면 None, 있으면 오류 메시지를 반환한다."""
+    if not name:
+        return "그룹명을 입력해주세요."
+    if len(name) > GROUP_NAME_MAX:
+        return f"그룹명은 {GROUP_NAME_MAX}자 이하여야 합니다."
+    return None
+
+
+@app.post("/api/groups")
+def api_create_group(request: Request, name: str = Form(default="")):
+    if not request.session.get("username"):
+        return JSONResponse({"ok": False, "message": SESSION_EXPIRED}, status_code=401)
+
+    name = name.strip()
+    error = _validate_group_name(name)
+    if error:
+        return JSONResponse({"ok": False, "message": error}, status_code=400)
+
+    ok, message = create_group(name)
+    return JSONResponse({"ok": ok, "message": message}, status_code=200 if ok else 400)
+
+
+@app.post("/api/groups/delete")
+def api_delete_group(request: Request, name: str = Form(default="")):
+    if not request.session.get("username"):
+        return JSONResponse({"ok": False, "message": SESSION_EXPIRED}, status_code=401)
+
+    name = name.strip()
+    if not name:
+        return JSONResponse(
+            {"ok": False, "message": "그룹명을 입력해주세요."}, status_code=400
+        )
+
+    ok, message = delete_group(name)
+    if ok:
+        return JSONResponse({"ok": True, "message": message})
+    # 존재하지 않으면 404, 서버가 남아 있어 거부한 경우는 400
+    status = 404 if "존재하지 않는" in message else 400
+    return JSONResponse({"ok": False, "message": message}, status_code=status)
+
+
 @app.post("/api/groups/rename")
 def api_rename_group(
     request: Request,
@@ -261,15 +305,9 @@ def api_rename_group(
         return JSONResponse({"ok": False, "message": SESSION_EXPIRED}, status_code=401)
 
     old_name, new_name = old_name.strip(), new_name.strip()
-    if not old_name or not new_name:
-        return JSONResponse(
-            {"ok": False, "message": "그룹명을 입력해주세요."}, status_code=400
-        )
-    if len(new_name) > GROUP_NAME_MAX:
-        return JSONResponse(
-            {"ok": False, "message": f"그룹명은 {GROUP_NAME_MAX}자 이하여야 합니다."},
-            status_code=400,
-        )
+    error = _validate_group_name(new_name) or _validate_group_name(old_name)
+    if error:
+        return JSONResponse({"ok": False, "message": error}, status_code=400)
     if old_name == new_name:
         return JSONResponse(
             {"ok": False, "message": "기존 그룹명과 동일합니다."}, status_code=400

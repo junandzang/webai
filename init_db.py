@@ -81,7 +81,19 @@ def main():
                 """
             )
 
-            # 5) 샘플 서버 시드 (이미 있으면 건너뜀)
+            # 5) server_groups 테이블 생성 (서버 0대인 그룹도 유지하기 위한 레지스트리)
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS server_groups (
+                    id         INT AUTO_INCREMENT PRIMARY KEY,
+                    name       VARCHAR(50) NOT NULL UNIQUE,
+                    sort_order INT NOT NULL DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                """
+            )
+
+            # 6) 샘플 서버 시드 (이미 있으면 건너뜀)
             cur.executemany(
                 "INSERT IGNORE INTO servers "
                 "(group_name, name, ip, os, role, status) "
@@ -90,10 +102,20 @@ def main():
             )
             seeded = cur.rowcount
 
+            # 7) 서버가 쓰고 있는 그룹명을 레지스트리에 채운다.
+            #    신규 설치(위 시드분)와 기존 설치(이미 있던 그룹) 모두 여기서 처리된다.
+            cur.execute(
+                "INSERT IGNORE INTO server_groups (name) "
+                "SELECT DISTINCT group_name FROM servers"
+            )
+            backfilled = cur.rowcount
+
     print(
         f"[완료] 데이터베이스 '{config.DB_NAME}'에 "
-        "'operators', 'servers' 테이블을 준비했습니다."
+        "'operators', 'servers', 'server_groups' 테이블을 준비했습니다."
     )
+    if backfilled:
+        print(f"[완료] 서버 그룹 {backfilled}개를 그룹 목록에 등록했습니다.")
     if seeded:
         print(f"[완료] 샘플 서버 {seeded}대를 등록했습니다.")
     else:

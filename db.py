@@ -74,28 +74,75 @@ def update_password(username: str, new_password: str) -> bool:
 # ===== 서버 =====
 
 
+def _ensure_group(cur, group_name: str):
+    """그룹명을 레지스트리에 등록한다 (이미 있으면 무시).
+
+    서버 등록·수정에서 새 그룹명이 들어와도 사이드바 목록과 어긋나지 않게 한다.
+    """
+    cur.execute(
+        "INSERT IGNORE INTO server_groups (name) VALUES (%s)", (group_name,)
+    )
+
+
 def list_groups():
-    """서버 그룹별 대수 집계. 사이드바 메뉴에 사용한다."""
+    """서버 그룹 목록과 그룹별 대수 집계. 사이드바 메뉴에 사용한다.
+
+    server_groups를 기준으로 LEFT JOIN 하므로 서버가 0대인 그룹도 포함된다.
+    """
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT group_name,
-                       COUNT(*)                                    AS total,
-                       SUM(status = 'ok')                          AS ok,
-                       SUM(status = 'check')                       AS `check`,
-                       SUM(status = 'down')                        AS down_cnt
-                FROM servers
-                GROUP BY group_name
-                ORDER BY group_name
+                SELECT g.name                   AS group_name,
+                       COUNT(s.id)              AS total,
+                       SUM(s.status = 'ok')     AS ok,
+                       SUM(s.status = 'check')  AS `check`,
+                       SUM(s.status = 'down')   AS down_cnt
+                FROM server_groups g
+                LEFT JOIN servers s ON s.group_name = g.name
+                GROUP BY g.id, g.name, g.sort_order
+                ORDER BY g.sort_order, g.name
                 """
             )
             rows = cur.fetchall()
-    # SUM()은 Decimal로 오므로 int로 정규화한다.
+    # COUNT/SUM은 Decimal 또는 None으로 오므로 int로 정규화한다.
     for row in rows:
         for key in ("total", "ok", "check", "down_cnt"):
             row[key] = int(row[key] or 0)
     return rows
+
+
+def create_group(name: str):
+    """빈 서버 그룹을 만든다. (성공여부, 메시지) 튜플을 반환한다."""
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO server_groups (name) VALUES (%s)", (name,)
+                )
+        return True, "그룹이 추가되었습니다."
+    except pymysql.err.IntegrityError:
+        return False, "이미 존재하는 그룹명입니다."
+
+
+def delete_group(name: str):
+    """빈 그룹을 삭제한다. 서버가 남아 있으면 거부한다.
+
+    (성공여부, 메시지) 튜플을 반환한다.
+    """
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT COUNT(*) AS c FROM servers WHERE group_name = %s", (name,)
+            )
+            used = cur.fetchone()["c"]
+            if used:
+                return False, f"서버가 {used}대 남아 있어 삭제할 수 없습니다."
+
+            cur.execute("DELETE FROM server_groups WHERE name = %s", (name,))
+            if cur.rowcount == 0:
+                return False, "존재하지 않는 그룹입니다."
+    return True, "그룹이 삭제되었습니다."
 
 
 def list_servers(group_name: str = None):
@@ -155,6 +202,7 @@ def create_server(group_name, name, ip, os_name, role, status):
                     "VALUES (%s, %s, %s, %s, %s, %s)",
                     (group_name, name, ip, os_name, role, status),
                 )
+                _ensure_group(cur, group_name)
         return True, "서버가 등록되었습니다."
     except pymysql.err.IntegrityError:
         return False, "이미 존재하는 서버명입니다."
@@ -172,6 +220,7 @@ def update_server(server_id, group_name, name, ip, os_name, role, status):
                     "WHERE id = %s",
                     (group_name, name, ip, os_name, role, status, server_id),
                 )
+                _ensure_group(cur, group_name)
         return True, "서버 정보가 수정되었습니다."
     except pymysql.err.IntegrityError:
         return False, "이미 존재하는 서버명입니다."
@@ -185,16 +234,17 @@ def rename_group(old_name: str, new_name: str):
     """
     with get_conn() as conn:
         with conn.cursor() as cur:
+            # 서버가 0대인 빈 그룹도 이름을 바꿀 수 있어야 하므로 레지스트리를 기준으로 본다.
             cur.execute(
-                "SELECT COUNT(*) AS c FROM servers WHERE group_name = %s", (old_name,)
+                "SELECT COUNT(*) AS c FROM server_groups WHERE name = %s", (old_name,)
             )
             if cur.fetchone()["c"] == 0:
                 return False, "존재하지 않는 그룹입니다."
 
-            # 대상 이름이 이미 쓰이고 있으면 합쳐진다는 사실을 알려준다.
+            # 대상 이름이 이미 쓰이고 있으면 두 그룹이 합쳐진다.
             cur.execute(
-                "SELECT COUNT(*) AS c FROM servers "
-                "WHERE group_name = %s AND group_name <> %s",
+                "SELECT COUNT(*) AS c FROM server_groups "
+                "WHERE name = %s AND name <> %s",
                 (new_name, old_name),
             )
             merged = cur.fetchone()["c"] > 0
@@ -203,6 +253,15 @@ def rename_group(old_name: str, new_name: str):
                 "UPDATE servers SET group_name = %s WHERE group_name = %s",
                 (new_name, old_name),
             )
+
+            if merged:
+                # 대상 그룹 행이 이미 있으므로 옛 행은 지운다 (UNIQUE 충돌 방지).
+                cur.execute("DELETE FROM server_groups WHERE name = %s", (old_name,))
+            else:
+                cur.execute(
+                    "UPDATE server_groups SET name = %s WHERE name = %s",
+                    (new_name, old_name),
+                )
 
     if merged:
         return True, f"기존 '{new_name}' 그룹으로 합쳐졌습니다."

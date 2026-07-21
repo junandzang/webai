@@ -26,7 +26,16 @@
       </div>
 
       <nav class="nav">
-        <p class="nav-label">서버 그룹</p>
+        <p class="nav-label">
+          <span>서버 그룹</span>
+          <button type="button" class="nav-add" id="groupAddBtn"
+                  title="그룹 추가" aria-label="서버 그룹 추가">
+            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+              <path d="M12 5v14M5 12h14" fill="none" stroke="currentColor"
+                    stroke-width="2" stroke-linecap="round"/>
+            </svg>
+          </button>
+        </p>
         {% for g in groups %}
         <div class="nav-row">
           <a class="nav-item {% if g.group_name == selected %}active{% endif %}"
@@ -42,17 +51,28 @@
             <span class="nav-name">{{ g.group_name }}</span>
             <span class="nav-count">{{ g.total }}</span>
           </a>
-          <button type="button" class="nav-edit" title="그룹명 수정"
-                  aria-label="{{ g.group_name }} 그룹명 수정"
-                  data-group="{{ g.group_name }}">
-            <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
-              <path d="M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17v3z" fill="none"
-                    stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
-            </svg>
-          </button>
+          <div class="nav-tools">
+            <button type="button" class="nav-edit" title="그룹명 수정"
+                    aria-label="{{ g.group_name }} 그룹명 수정"
+                    data-group="{{ g.group_name }}">
+              <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
+                <path d="M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17v3z" fill="none"
+                      stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+              </svg>
+            </button>
+            <button type="button" class="nav-del" title="그룹 삭제"
+                    aria-label="{{ g.group_name }} 그룹 삭제"
+                    data-group="{{ g.group_name }}" data-total="{{ g.total }}">
+              <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
+                <path d="M6 7h12M9.5 7V5.5h5V7M8 7l.8 12h6.4L16 7" fill="none"
+                      stroke="currentColor" stroke-width="1.8"
+                      stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+          </div>
         </div>
         {% else %}
-        <p class="nav-empty">등록된 서버가 없습니다.</p>
+        <p class="nav-empty">등록된 그룹이 없습니다.<br>위 + 버튼으로 추가하세요.</p>
         {% endfor %}
 
         <p class="nav-label">개인</p>
@@ -142,6 +162,42 @@
           <button type="submit" class="save-btn">저장</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- 그룹 추가 팝업 -->
+  <div class="modal-overlay" id="groupAddModal">
+    <div class="modal">
+      <h2>서버 그룹 추가</h2>
+      <div class="modal-msg" id="groupAddMsg" role="alert"></div>
+
+      <form id="groupAddForm" autocomplete="off">
+        <label for="ga_name">그룹명</label>
+        <input type="text" id="ga_name" name="name" maxlength="50"
+               placeholder="예: 배치서버">
+        <p class="hint">서버가 없는 빈 그룹으로 만들어집니다.
+          만든 뒤 "서버 추가"로 서버를 채우면 됩니다.</p>
+
+        <div class="modal-actions">
+          <button type="button" class="cancel-btn" onclick="closeGroupAddModal()">취소</button>
+          <button type="submit" class="save-btn">추가</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 그룹 삭제 확인 팝업 -->
+  <div class="modal-overlay" id="groupDelModal">
+    <div class="modal">
+      <h2>그룹 삭제</h2>
+      <div class="modal-msg" id="groupDelMsg" role="alert"></div>
+      <p class="confirm-text"><strong id="gd_name"></strong> 그룹을 삭제할까요?</p>
+      <p class="hint" id="gd_hint"></p>
+
+      <div class="modal-actions">
+        <button type="button" class="cancel-btn" onclick="closeGroupDelModal()">취소</button>
+        <button type="button" class="danger-btn" id="gd_confirm">삭제</button>
+      </div>
     </div>
   </div>
 
@@ -239,8 +295,105 @@
       }
     });
 
+    /* ===== 그룹 추가 ===== */
+    const groupAddModal = document.getElementById('groupAddModal');
+    const groupAddForm = document.getElementById('groupAddForm');
+    const groupAddMsg = document.getElementById('groupAddMsg');
+
+    function openGroupAddModal() {
+      groupAddForm.reset();
+      groupAddMsg.className = 'modal-msg';
+      groupAddModal.classList.add('open');
+      groupAddForm.name.focus();
+    }
+    function closeGroupAddModal() {
+      groupAddModal.classList.remove('open');
+    }
+
+    document.getElementById('groupAddBtn')
+      .addEventListener('click', openGroupAddModal);
+
+    groupAddModal.addEventListener('click', (e) => {
+      if (e.target === groupAddModal) closeGroupAddModal();
+    });
+
+    groupAddForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      groupAddMsg.className = 'modal-msg';
+      const data = new URLSearchParams(new FormData(groupAddForm));
+      try {
+        const res = await fetch('/api/groups', { method: 'POST', body: data });
+        const json = await res.json();
+        groupAddMsg.textContent = json.message;
+        groupAddMsg.className = 'modal-msg ' + (json.ok ? 'ok' : 'error') + ' show';
+        // 새로 만든 그룹으로 이동해 바로 서버를 채울 수 있게 한다.
+        if (json.ok) {
+          const target = groupAddForm.name.value.trim();
+          setTimeout(() => {
+            location.href = '/dashboard?group=' + encodeURIComponent(target);
+          }, 700);
+        }
+      } catch (err) {
+        groupAddMsg.textContent = '요청 처리 중 오류가 발생했습니다.';
+        groupAddMsg.className = 'modal-msg error show';
+      }
+    });
+
+    /* ===== 그룹 삭제 ===== */
+    const groupDelModal = document.getElementById('groupDelModal');
+    const groupDelMsg = document.getElementById('groupDelMsg');
+    const gdConfirm = document.getElementById('gd_confirm');
+    let deletingGroup = null;
+
+    function openGroupDelModal(name, total) {
+      deletingGroup = name;
+      groupDelMsg.className = 'modal-msg';
+      document.getElementById('gd_name').textContent = name;
+
+      // 서버가 남아 있으면 삭제할 수 없다는 사실을 미리 알려준다.
+      const empty = Number(total) === 0;
+      document.getElementById('gd_hint').textContent = empty
+        ? '이 그룹에는 서버가 없습니다.'
+        : `서버가 ${total}대 남아 있어 삭제할 수 없습니다. 먼저 서버를 옮기거나 삭제하세요.`;
+      gdConfirm.disabled = !empty;
+
+      groupDelModal.classList.add('open');
+    }
+    function closeGroupDelModal() {
+      groupDelModal.classList.remove('open');
+    }
+
+    groupDelModal.addEventListener('click', (e) => {
+      if (e.target === groupDelModal) closeGroupDelModal();
+    });
+
+    gdConfirm.addEventListener('click', async () => {
+      try {
+        const res = await fetch('/api/groups/delete', {
+          method: 'POST',
+          body: new URLSearchParams({ name: deletingGroup }),
+        });
+        const json = await res.json();
+        groupDelMsg.textContent = json.message;
+        groupDelMsg.className = 'modal-msg ' + (json.ok ? 'ok' : 'error') + ' show';
+        if (json.ok) setTimeout(() => { location.href = '/dashboard'; }, 700);
+      } catch (err) {
+        groupDelMsg.textContent = '요청 처리 중 오류가 발생했습니다.';
+        groupDelMsg.className = 'modal-msg error show';
+      }
+    });
+
+    // 그룹명은 data 속성으로 넘긴다 (인라인 onclick은 따옴표에서 깨진다).
+    document.querySelectorAll('.nav-del').forEach((btn) => {
+      btn.addEventListener('click', () =>
+        openGroupDelModal(btn.dataset.group, btn.dataset.total));
+    });
+
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') { closePwModal(); closeGroupModal(); }
+      if (e.key === 'Escape') {
+        closePwModal(); closeGroupModal();
+        closeGroupAddModal(); closeGroupDelModal();
+      }
     });
   </script>
   {% block scripts %}{% endblock %}
