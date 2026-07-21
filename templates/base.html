@@ -44,7 +44,7 @@
           </a>
           <button type="button" class="nav-edit" title="그룹명 수정"
                   aria-label="{{ g.group_name }} 그룹명 수정"
-                  onclick="openGroupModal({{ g.group_name | tojson }})">
+                  data-group="{{ g.group_name }}">
             <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
               <path d="M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17v3z" fill="none"
                     stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
@@ -203,6 +203,12 @@
       groupForm.new_name.focus();
       groupForm.new_name.select();
     }
+
+    // 그룹명은 data 속성으로 넘긴다. onclick 인라인에 넣으면 따옴표가 섞인
+    // 그룹명에서 속성이 깨지기 때문이다.
+    document.querySelectorAll('.nav-edit').forEach((btn) => {
+      btn.addEventListener('click', () => openGroupModal(btn.dataset.group));
+    });
     function closeGroupModal() {
       groupModal.classList.remove('open');
     }
