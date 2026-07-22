@@ -503,20 +503,21 @@ def api_start_scan(request: Request, server_id: int):
             status_code=400,
         )
 
-    # 이미 진행 중인 스캔이 있으면 중복 실행하지 않는다.
-    current = latest_scan(server_id)
-    if current and current["status"] in ("queued", "running"):
+    # _start_scan을 그대로 쓴다. 저장된 SSH/DB 자격증명이 있으면 계정 기반
+    # 심층 점검까지 함께 수행된다(일괄 검사와 동일한 경로).
+    ok, _reason = _start_scan(
+        server_id, request.session["username"], _client_ip(request)
+    )
+    if not ok:
         return JSONResponse(
-            {"ok": True, "message": "이미 스캔이 진행 중입니다.", "scan_id": current["id"]}
+            {"ok": False, "message": "검사를 시작하지 못했습니다."}, status_code=400
         )
 
-    scan_id = create_scan(server_id, ip)
-    # 백그라운드 스레드에서 실행 (요청은 즉시 반환)
-    threading.Thread(
-        target=scanner.run_scan, args=(scan_id, server_id, ip), daemon=True
-    ).start()
+    creds = db.get_server_credentials(server_id)
+    msg = "계정 점검을 포함해 검사를 시작했습니다." if creds else "보안검사를 시작했습니다."
+    scan = latest_scan(server_id)
     return JSONResponse(
-        {"ok": True, "message": "보안검사를 시작했습니다.", "scan_id": scan_id}
+        {"ok": True, "message": msg, "scan_id": scan["id"] if scan else None}
     )
 
 
