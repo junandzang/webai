@@ -483,6 +483,8 @@ def _ssh_permissions(client):
         if len(parts) != 2:
             continue
         name, mode = parts
+        # stat -c %a 는 앞의 0을 생략한다(000 -> "0"). 비교 전에 3자리로 맞춘다.
+        mode = mode.zfill(3)
         if name.endswith("/shadow") and mode not in ("000", "400", "600", "640"):
             bad.append(f"{name} {mode}")
         if name.endswith("/passwd") and mode not in ("644", "444"):
