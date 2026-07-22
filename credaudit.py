@@ -368,21 +368,46 @@ LISTEN_FIX = {
 _EXPECTED_PORTS = {80, 443, 22}
 
 
-def _detect_firewall(client, password):
-    """호스트 방화벽 상태를 파악한다. (요약문자열, 위험여부)"""
-    fw_active = _run(client, "systemctl is-active firewalld 2>/dev/null").strip()
-    ufw = _run(client, "command -v ufw >/dev/null && ufw status 2>/dev/null | head -1").strip()
-    policy = _run(client, "iptables -S 2>/dev/null | grep -E '^-P INPUT'",
-                  password=password, sudo=True).strip()
+# iptables를 관리하는 서비스들. firewalld 외에도 국내에서 널리 쓰는
+# oops-firewall 처럼 자체 스크립트로 규칙을 넣는 경우가 있어 함께 확인한다.
+_FIREWALL_SERVICES = ("firewalld", "oops-firewall", "ufw", "nftables", "iptables",
+                      "ip6tables", "shorewall")
 
-    if fw_active == "active":
-        return "firewalld 활성", False
+
+def _detect_firewall(client, password):
+    """호스트 방화벽 상태를 파악한다. (요약문자열, 위험여부)
+
+    판정 순서:
+      1) 방화벽 관리 서비스가 active 인가 (firewalld / oops-firewall / ufw / ...)
+      2) iptables INPUT 기본정책이 DROP/REJECT 인가
+      3) INPUT 체인에 실제 차단(DROP/REJECT) 규칙이 있는가
+         - oops-firewall 은 정책은 ACCEPT로 두고 마지막에 차단 규칙을 넣는 방식이라
+           정책만 보면 '방화벽 없음'으로 오판하게 된다.
+    """
+    for svc in _FIREWALL_SERVICES:
+        state = _run(client, f"systemctl is-active {svc} 2>/dev/null").strip()
+        if state == "active":
+            return f"{svc} 활성", False
+
+    # ufw 는 서비스명이 다를 수 있어 상태 명령으로도 확인한다.
+    ufw = _run(client, "command -v ufw >/dev/null && ufw status 2>/dev/null | head -1").strip()
     if ufw.lower().startswith("status: active"):
         return "ufw 활성", False
+
+    policy = _run(client, "iptables -S INPUT 2>/dev/null | grep -E '^-P INPUT'",
+                  password=password, sudo=True).strip()
     if policy and "ACCEPT" not in policy:
         return f"iptables 기본정책 {policy}", False
-    return (f"firewalld 비활성, iptables INPUT 정책 ACCEPT"
-            if policy else "호스트 방화벽 미확인"), True
+
+    # 정책이 ACCEPT여도 차단 규칙이 있으면 방화벽이 동작 중인 것이다.
+    drops = _run(client, "iptables -S INPUT 2>/dev/null | grep -cE ' -j (DROP|REJECT)'",
+                 password=password, sudo=True).strip()
+    if drops.isdigit() and int(drops) > 0:
+        return f"iptables 차단 규칙 {drops}건 적용", False
+
+    if policy:
+        return "firewalld 비활성, iptables INPUT 정책 ACCEPT (차단 규칙 없음)", True
+    return "호스트 방화벽 미확인", True
 
 
 def _parse_ss(out):
