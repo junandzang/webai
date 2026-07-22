@@ -28,9 +28,21 @@ python init_db.py
 
 ## 2) 서버 실행
 ```bash
-python -m uvicorn app:app --reload --port 8000
+python -m uvicorn app:app --host 127.0.0.1 --port 8000
 ```
-브라우저에서 http://localhost:8000 접속
+브라우저에서 http://localhost:8000 접속 (개발 중 자동 리로드는 `--reload` 추가)
+
+**간편 실행**: `run_8000.bat` 더블클릭 (8100은 `run_8100.bat`). 창을 닫으면 서버도 종료됩니다.
+
+**자동 시작(로그온 시)**: 작업 스케줄러에 `operator-site` 작업으로 등록되어 있습니다.
+`start_servers.vbs`가 8000·8100을 창 없이 백그라운드로 띄웁니다.
+```powershell
+Start-ScheduledTask -TaskName 'operator-site'      # 지금 바로 시작
+Get-ScheduledTaskInfo -TaskName 'operator-site'    # 마지막 실행 결과 확인
+Unregister-ScheduledTask -TaskName 'operator-site' # 자동 시작 해제
+```
+> 관리자 권한이 없어 진짜 Windows 서비스(sc/NSSM) 대신 작업 스케줄러를 사용합니다.
+> 서버를 내리려면 `Get-Process python | Stop-Process` 또는 해당 PID를 종료하세요.
 
 ### (선택) SolidStep 스타일 UI — 포트 8100
 같은 DB·스캔 엔진을 공유하는 별도 디자인의 콘솔입니다. 8000과 동시에 띄울 수 있습니다.
