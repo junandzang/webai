@@ -92,7 +92,13 @@
                data-ip="{{ s.ip }}"
                data-os="{{ s.os }}"
                data-role="{{ s.role }}"
-               data-status="{{ s.status }}">
+               data-status="{{ s.status }}"
+               data-ssh-port="{{ s.ssh_port or 22 }}"
+               data-ssh-user="{{ s.ssh_user or '' }}"
+               data-ssh-pw-set="{{ 1 if s.ssh_pw_set else 0 }}"
+               data-db-port="{{ s.db_port or 3306 }}"
+               data-db-user="{{ s.db_user or '' }}"
+               data-db-pw-set="{{ 1 if s.db_pw_set else 0 }}">
         <div class="card-tools">
           <button type="button" class="tool" title="수정"
                   onclick="openServerModal(this.closest('.server-card'))">
@@ -204,6 +210,44 @@
           {% endfor %}
         </select>
 
+        <p class="cred-sec">SSH 접속 정보 (보안 점검용)</p>
+        <div class="cred-grid">
+          <div>
+            <label for="f_ssh_port">포트</label>
+            <input type="text" id="f_ssh_port" name="ssh_port" value="22" inputmode="numeric">
+          </div>
+          <div>
+            <label for="f_ssh_user">ID</label>
+            <input type="text" id="f_ssh_user" name="ssh_user" placeholder="예: root" autocomplete="off">
+          </div>
+          <div>
+            <label for="f_ssh_password">Password</label>
+            <input type="password" id="f_ssh_password" name="ssh_password" autocomplete="new-password">
+          </div>
+        </div>
+
+        <p class="cred-sec">DB 접속 정보 (MySQL/MariaDB 점검용)</p>
+        <div class="cred-grid">
+          <div>
+            <label for="f_db_port">포트</label>
+            <input type="text" id="f_db_port" name="db_port" value="3306" inputmode="numeric">
+          </div>
+          <div>
+            <label for="f_db_user">ID</label>
+            <input type="text" id="f_db_user" name="db_user" placeholder="예: root" autocomplete="off">
+          </div>
+          <div>
+            <label for="f_db_password">Password</label>
+            <input type="password" id="f_db_password" name="db_password" autocomplete="new-password">
+          </div>
+        </div>
+
+        <p class="cred-note">
+          🔒 비밀번호는 <b>암호화되어 저장</b>되며 화면에 다시 표시되지 않습니다.
+          수정 시 <b>비워두면 기존 비밀번호가 유지</b>됩니다.
+          저장해 두면 검사 시 자동으로 서버에 접속해 계정·설정까지 점검합니다.
+        </p>
+
         <div class="modal-actions">
           <button type="button" class="cancel-btn" onclick="closeServerModal()">취소</button>
           <button type="submit" class="save-btn">저장</button>
@@ -269,10 +313,23 @@
       serverForm.os_name.value = card.dataset.os;
       serverForm.role.value = card.dataset.role;
       serverForm.status.value = card.dataset.status;
+      // 자격증명: ID·포트는 채우고, 비밀번호는 내려받지 않으므로 설정 여부만 안내
+      serverForm.ssh_port.value = card.dataset.sshPort || '22';
+      serverForm.ssh_user.value = card.dataset.sshUser || '';
+      serverForm.db_port.value = card.dataset.dbPort || '3306';
+      serverForm.db_user.value = card.dataset.dbUser || '';
+      serverForm.ssh_password.placeholder =
+        card.dataset.sshPwSet === '1' ? '저장됨 (변경할 때만 입력)' : '';
+      serverForm.db_password.placeholder =
+        card.dataset.dbPwSet === '1' ? '저장됨 (변경할 때만 입력)' : '';
     } else {
       editingId = null;
       serverTitle.textContent = '서버 추가';
       serverForm.group_name.value = currentGroup;
+      serverForm.ssh_port.value = '22';
+      serverForm.db_port.value = '3306';
+      serverForm.ssh_password.placeholder = '';
+      serverForm.db_password.placeholder = '';
     }
 
     serverModal.classList.add('open');

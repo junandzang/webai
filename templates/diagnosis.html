@@ -53,7 +53,14 @@
     </div>
     <div class="diag-asset-list">
       {% for a in assets %}
-      <article class="diag-asset" data-id="{{ a.id }}">
+      <article class="diag-asset" data-id="{{ a.id }}"
+               data-group="{{ a.group_name }}" data-name="{{ a.name }}"
+               data-ip="{{ a.ip or '' }}" data-os="{{ a.os or '' }}"
+               data-role="{{ a.role or '' }}" data-status="{{ a.status }}"
+               data-ssh-port="{{ a.ssh_port or 22 }}" data-ssh-user="{{ a.ssh_user or '' }}"
+               data-ssh-pw-set="{{ 1 if a.ssh_pw_set else 0 }}"
+               data-db-port="{{ a.db_port or 3306 }}" data-db-user="{{ a.db_user or '' }}"
+               data-db-pw-set="{{ 1 if a.db_pw_set else 0 }}">
         <div class="da-score score-{{ a.score_color }}">
           {{ a.score if a.score is not none else '미진단' }}
         </div>
@@ -66,8 +73,7 @@
           </div>
         </div>
         <span class="scan-state" data-id="{{ a.id }}"></span>
-        <button type="button" class="da-cred" data-id="{{ a.id }}"
-                data-name="{{ a.name }}" data-ip="{{ a.ip or '' }}">계정 점검</button>
+        <button type="button" class="da-cred da-edit" data-id="{{ a.id }}">서버 수정</button>
         <a class="da-report" href="/servers/{{ a.id }}">리포트</a>
       </article>
       {% else %}
@@ -77,54 +83,78 @@
   </section>
 </div>
 
-<!-- 계정 점검 (자격증명 입력) 팝업 -->
+<!-- 서버 수정 (기본정보 + SSH/DB 접속 정보) 팝업 -->
 <div class="modal-overlay" id="credModal">
   <div class="modal">
-    <h2>계정 점검</h2>
+    <h2>서버 수정</h2>
     <div class="modal-msg" id="credMsg" role="alert"></div>
     <p class="cred-target"><strong id="credName"></strong> <span id="credIp"></span></p>
 
     <form id="credForm" autocomplete="off">
-      <p class="cred-sec">SSH (호스트 점검)</p>
+      <label for="e_group">그룹명</label>
+      <input type="text" id="e_group" name="group_name" list="groupList2">
+      <datalist id="groupList2">
+        {% for g in groups %}<option value="{{ g.group_name }}"></option>{% endfor %}
+      </datalist>
+
+      <label for="e_name">서버명</label>
+      <input type="text" id="e_name" name="name">
+
+      <label for="e_ip">IP</label>
+      <input type="text" id="e_ip" name="ip">
+
+      <label for="e_role">용도</label>
+      <input type="text" id="e_role" name="role">
+
+      <label for="e_status">상태</label>
+      <select id="e_status" name="status">
+        {% for code, label in status_labels.items() %}
+        <option value="{{ code }}">{{ label }}</option>
+        {% endfor %}
+      </select>
+      <input type="hidden" name="os_name" id="e_os">
+
+      <p class="cred-sec">SSH 접속 정보 (호스트 점검용)</p>
       <div class="cred-grid">
         <div>
           <label for="ssh_port">포트</label>
           <input type="text" id="ssh_port" name="ssh_port" value="22" inputmode="numeric">
         </div>
         <div>
-          <label for="ssh_user">계정(ID)</label>
+          <label for="ssh_user">ID</label>
           <input type="text" id="ssh_user" name="ssh_user" placeholder="예: root" autocomplete="off">
         </div>
         <div>
-          <label for="ssh_password">비밀번호</label>
+          <label for="ssh_password">Password</label>
           <input type="password" id="ssh_password" name="ssh_password" autocomplete="new-password">
         </div>
       </div>
 
-      <p class="cred-sec">DB (MySQL/MariaDB 점검)</p>
+      <p class="cred-sec">DB 접속 정보 (MySQL/MariaDB 점검용)</p>
       <div class="cred-grid">
         <div>
           <label for="db_port">포트</label>
           <input type="text" id="db_port" name="db_port" value="3306" inputmode="numeric">
         </div>
         <div>
-          <label for="db_user">계정(ID)</label>
+          <label for="db_user">ID</label>
           <input type="text" id="db_user" name="db_user" placeholder="예: root" autocomplete="off">
         </div>
         <div>
-          <label for="db_password">비밀번호</label>
+          <label for="db_password">Password</label>
           <input type="password" id="db_password" name="db_password" autocomplete="new-password">
         </div>
       </div>
 
       <p class="cred-note">
-        🔒 입력한 계정 정보는 <b>저장되지 않으며</b> 이번 검사에만 사용됩니다.
-        점검은 <b>읽기 전용</b>으로만 수행합니다. SSH·DB 중 필요한 쪽만 입력해도 됩니다.
+        🔒 비밀번호는 <b>암호화되어 저장</b>되며 화면에 다시 표시되지 않습니다.
+        <b>비워두면 기존 비밀번호가 유지</b>됩니다.
+        저장해 두면 <b>검사</b> 시 자동으로 서버에 접속해 계정·설정까지 점검합니다.
       </p>
 
       <div class="modal-actions">
         <button type="button" class="cancel-btn" onclick="closeCredModal()">취소</button>
-        <button type="submit" class="save-btn">검사 시작</button>
+        <button type="submit" class="save-btn">저장</button>
       </div>
     </form>
   </div>
@@ -209,7 +239,7 @@
     finally { scanBtn.disabled = false; }
   });
 
-  /* ===== 계정 점검 (자격증명 입력) ===== */
+  /* ===== 서버 수정 (기본정보 + SSH/DB 접속 정보) ===== */
   const credModal = document.getElementById('credModal');
   const credForm = document.getElementById('credForm');
   const credMsg = document.getElementById('credMsg');
@@ -217,19 +247,34 @@
 
   function closeCredModal() {
     credModal.classList.remove('open');
-    credForm.reset();               // 입력값(비밀번호)을 화면에서 즉시 비운다
+    credForm.reset();               // 입력한 비밀번호를 화면에서 즉시 비운다
   }
   credModal.addEventListener('click', e => { if (e.target === credModal) closeCredModal(); });
   document.addEventListener('keydown', e => { if (e.key === 'Escape') closeCredModal(); });
 
-  // 서버명은 data 속성으로 전달 (인라인 onclick은 따옴표에서 깨진다)
-  document.querySelectorAll('.da-cred').forEach(btn => {
+  // 값은 data 속성으로 전달 (인라인 onclick은 따옴표에서 깨진다)
+  document.querySelectorAll('.da-edit').forEach(btn => {
     btn.addEventListener('click', () => {
-      credId = btn.dataset.id;
+      const card = btn.closest('.diag-asset');
+      const d = card.dataset;
+      credId = d.id;
       credForm.reset();
       credMsg.className = 'modal-msg';
-      document.getElementById('credName').textContent = btn.dataset.name;
-      document.getElementById('credIp').textContent = btn.dataset.ip || '';
+      document.getElementById('credName').textContent = d.name;
+      document.getElementById('credIp').textContent = d.ip || '';
+      credForm.group_name.value = d.group || '';
+      credForm.name.value = d.name || '';
+      credForm.ip.value = d.ip || '';
+      credForm.role.value = d.role || '';
+      credForm.status.value = d.status || 'ok';
+      credForm.os_name.value = d.os || '';
+      credForm.ssh_port.value = d.sshPort || '22';
+      credForm.ssh_user.value = d.sshUser || '';
+      credForm.db_port.value = d.dbPort || '3306';
+      credForm.db_user.value = d.dbUser || '';
+      // 비밀번호는 서버에서 내려주지 않으므로 설정 여부만 안내한다
+      credForm.ssh_password.placeholder = d.sshPwSet === '1' ? '저장됨 (변경할 때만 입력)' : '';
+      credForm.db_password.placeholder = d.dbPwSet === '1' ? '저장됨 (변경할 때만 입력)' : '';
       credModal.classList.add('open');
       credForm.db_user.focus();
     });
@@ -240,16 +285,11 @@
     credMsg.className = 'modal-msg';
     const body = new URLSearchParams(new FormData(credForm));
     try {
-      const res = await fetch(`/api/servers/${credId}/scan/credentialed`,
-                              { method: 'POST', body });
+      const res = await fetch(`/api/servers/${credId}`, { method: 'POST', body });
       const j = await res.json();
       credMsg.textContent = j.message;
       credMsg.className = 'modal-msg ' + (j.ok ? 'ok' : 'error') + ' show';
-      if (j.ok) {
-        const el = document.querySelector(`.scan-state[data-id="${credId}"]`);
-        if (el) { el.className = 'scan-state running'; el.textContent = '검사 중…'; poll(credId); }
-        setTimeout(closeCredModal, 900);   // 비밀번호가 화면에 남지 않도록 곧 닫는다
-      }
+      if (j.ok) setTimeout(() => location.reload(), 700);
     } catch (err) {
       credMsg.textContent = '요청 처리 중 오류가 발생했습니다.';
       credMsg.className = 'modal-msg error show';

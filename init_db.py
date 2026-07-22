@@ -162,11 +162,21 @@ def main():
                 "ALTER TABLE scans "
                 "ADD COLUMN IF NOT EXISTS score FLOAT DEFAULT NULL"
             )
-            # 계정 기반 심층 점검 포함 여부. 자격증명 자체는 저장하지 않는다.
+            # 계정 기반 심층 점검 포함 여부.
             cur.execute(
                 "ALTER TABLE scans "
                 "ADD COLUMN IF NOT EXISTS authed TINYINT(1) NOT NULL DEFAULT 0"
             )
+            # 서버별 SSH/DB 자격증명. 비밀번호는 Fernet으로 암호화해 저장한다.
+            for ddl in (
+                "ADD COLUMN IF NOT EXISTS ssh_port INT NOT NULL DEFAULT 22",
+                "ADD COLUMN IF NOT EXISTS ssh_user VARCHAR(64) NOT NULL DEFAULT ''",
+                "ADD COLUMN IF NOT EXISTS ssh_password_enc VARBINARY(512) NULL",
+                "ADD COLUMN IF NOT EXISTS db_port INT NOT NULL DEFAULT 3306",
+                "ADD COLUMN IF NOT EXISTS db_user VARCHAR(64) NOT NULL DEFAULT ''",
+                "ADD COLUMN IF NOT EXISTS db_password_enc VARBINARY(512) NULL",
+            ):
+                cur.execute("ALTER TABLE servers " + ddl)
 
     print(
         f"[완료] 데이터베이스 '{config.DB_NAME}'에 "

@@ -148,7 +148,10 @@ def delete_group(name: str):
 def list_servers(group_name: str = None):
     """그룹에 속한 서버 목록. group_name이 None이면 전체를 반환한다."""
     sql = (
-        "SELECT id, group_name, name, ip, os, role, status, sort_order "
+        "SELECT id, group_name, name, ip, os, role, status, sort_order, "
+        "       ssh_port, ssh_user, db_port, db_user, "
+        "       ssh_password_enc IS NOT NULL AS ssh_pw_set, "
+        "       db_password_enc IS NOT NULL AS db_pw_set "
         "FROM servers "
     )
     params = ()
@@ -163,12 +166,23 @@ def list_servers(group_name: str = None):
             return cur.fetchall()
 
 
+def get_server_by_name(name: str):
+    """서버명으로 1건 조회. 등록 직후 id를 얻을 때 쓴다."""
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id, name FROM servers WHERE name = %s", (name,))
+            return cur.fetchone()
+
+
 def get_server(server_id: int):
     """id로 서버 1건을 조회한다. 없으면 None."""
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT id, group_name, name, ip, os, role, status, sort_order "
+                "SELECT id, group_name, name, ip, os, role, status, sort_order, "
+                "       ssh_port, ssh_user, db_port, db_user, "
+                "       ssh_password_enc IS NOT NULL AS ssh_pw_set, "
+                "       db_password_enc IS NOT NULL AS db_pw_set "
                 "FROM servers WHERE id = %s",
                 (server_id,),
             )
@@ -274,6 +288,120 @@ def delete_server(server_id: int) -> bool:
         with conn.cursor() as cur:
             cur.execute("DELETE FROM servers WHERE id = %s", (server_id,))
             return cur.rowcount > 0
+
+
+# ===== 서버 자격증명 암복호화 =====
+#
+# SSH/DB 비밀번호는 평문으로 두지 않고 Fernet으로 암호화해 저장한다.
+# 키는 .env의 CRED_KEY이며 저장소에 커밋되지 않는다.
+
+
+def _fernet():
+    if not config.CRED_KEY:
+        return None
+    try:
+        from cryptography.fernet import Fernet
+        return Fernet(config.CRED_KEY.encode())
+    except Exception:
+        return None
+
+
+def encrypt_secret(plain: str):
+    """평문 비밀번호를 암호문 bytes로. 빈 값이거나 키가 없으면 None."""
+    if not plain:
+        return None
+    f = _fernet()
+    if f is None:
+        return None
+    return f.encrypt(plain.encode("utf-8"))
+
+
+def decrypt_secret(blob):
+    """저장된 암호문을 평문으로. 실패하면 빈 문자열."""
+    if not blob:
+        return ""
+    f = _fernet()
+    if f is None:
+        return ""
+    try:
+        if isinstance(blob, str):
+            blob = blob.encode("utf-8")
+        return f.decrypt(blob).decode("utf-8")
+    except Exception:
+        return ""
+
+
+def get_server_credentials(server_id: int):
+    """스캔에 쓸 자격증명을 복호화해 반환한다. 저장된 게 없으면 빈 dict.
+
+    반환값은 스캐너에서만 쓰이며 화면·API로 내보내지 않는다.
+    """
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT ssh_port, ssh_user, ssh_password_enc, "
+                "       db_port, db_user, db_password_enc "
+                "FROM servers WHERE id = %s",
+                (server_id,),
+            )
+            row = cur.fetchone()
+    if not row:
+        return {}
+
+    creds = {}
+    if (row["ssh_user"] or "").strip():
+        creds["ssh"] = {
+            "port": row["ssh_port"] or 22,
+            "user": row["ssh_user"].strip(),
+            "password": decrypt_secret(row["ssh_password_enc"]),
+        }
+    if (row["db_user"] or "").strip():
+        creds["db"] = {
+            "port": row["db_port"] or 3306,
+            "user": row["db_user"].strip(),
+            "password": decrypt_secret(row["db_password_enc"]),
+        }
+    return creds
+
+
+def save_server_credentials(server_id, ssh_port, ssh_user, ssh_password,
+                            db_port, db_user, db_password):
+    """서버의 SSH/DB 자격증명을 저장한다.
+
+    비밀번호가 빈 문자열이면 **기존 값을 유지**한다(화면에서 비밀번호를 다시
+    내려보내지 않으므로, 수정 시 비워두면 그대로 두는 동작).
+    """
+    sets = ["ssh_port = %s", "ssh_user = %s", "db_port = %s", "db_user = %s"]
+    params = [int(ssh_port or 22), (ssh_user or "").strip()[:64],
+              int(db_port or 3306), (db_user or "").strip()[:64]]
+
+    if ssh_password:
+        sets.append("ssh_password_enc = %s")
+        params.append(encrypt_secret(ssh_password))
+    if db_password:
+        sets.append("db_password_enc = %s")
+        params.append(encrypt_secret(db_password))
+
+    params.append(server_id)
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE servers SET " + ", ".join(sets) + " WHERE id = %s", params
+            )
+
+
+def credential_status(server_id: int):
+    """화면 표시용. 비밀번호 자체는 절대 반환하지 않고 설정 여부만 알려준다."""
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT ssh_port, ssh_user, db_port, db_user, "
+                "       ssh_password_enc IS NOT NULL AS ssh_pw_set, "
+                "       db_password_enc IS NOT NULL AS db_pw_set "
+                "FROM servers WHERE id = %s",
+                (server_id,),
+            )
+            return cur.fetchone() or {}
 
 
 def update_server_os(server_id: int, os_name: str):
@@ -494,6 +622,9 @@ def scans_overview(group_name: str = None):
     """
     sql = (
         "SELECT sv.id, sv.name, sv.group_name, sv.ip, sv.os, sv.role, sv.status, "
+        "       sv.ssh_port, sv.ssh_user, sv.db_port, sv.db_user, "
+        "       sv.ssh_password_enc IS NOT NULL AS ssh_pw_set, "
+        "       sv.db_password_enc IS NOT NULL AS db_pw_set, "
         "       s.id AS scan_id, s.status AS scan_status, s.score, "
         "       s.crit, s.high, s.med, s.low, s.info, s.os_detected, "
         "       s.scan_source, s.finished_at "

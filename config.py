@@ -39,3 +39,7 @@ NMAP_PATH = os.getenv("NMAP_PATH", "")
 NVD_API_KEY = os.getenv("NVD_API_KEY", "")
 NVD_CA_BUNDLE = os.getenv("NVD_CA_BUNDLE", "")
 NVD_INSECURE = os.getenv("NVD_INSECURE", "") == "1"
+
+# 서버 SSH/DB 자격증명 암호화 키(Fernet). 비어 있으면 자격증명 저장이 비활성화된다.
+#   생성: python -c "from cryptography.fernet import Fernet;print(Fernet.generate_key().decode())"
+CRED_KEY = os.getenv("CRED_KEY", "")

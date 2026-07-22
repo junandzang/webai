@@ -213,6 +213,12 @@ def api_create_server(
     os_name: str = Form(default=""),
     role: str = Form(default=""),
     status: str = Form(default="ok"),
+    ssh_port: str = Form(default="22"),
+    ssh_user: str = Form(default=""),
+    ssh_password: str = Form(default=""),
+    db_port: str = Form(default="3306"),
+    db_user: str = Form(default=""),
+    db_password: str = Form(default=""),
 ):
     if not request.session.get("username"):
         return JSONResponse({"ok": False, "message": SESSION_EXPIRED}, status_code=401)
@@ -225,6 +231,14 @@ def api_create_server(
     ok, message = create_server(
         group_name, name, ip.strip(), os_name.strip(), role.strip(), status
     )
+    if ok:
+        # 방금 만든 서버에 자격증명을 붙인다(비밀번호는 암호화 저장).
+        new = db.get_server_by_name(name)
+        if new:
+            db.save_server_credentials(
+                new["id"], ssh_port, ssh_user, ssh_password,
+                db_port, db_user, db_password,
+            )
     return JSONResponse({"ok": ok, "message": message}, status_code=200 if ok else 400)
 
 
@@ -238,6 +252,12 @@ def api_update_server(
     os_name: str = Form(default=""),
     role: str = Form(default=""),
     status: str = Form(default="ok"),
+    ssh_port: str = Form(default="22"),
+    ssh_user: str = Form(default=""),
+    ssh_password: str = Form(default=""),
+    db_port: str = Form(default="3306"),
+    db_user: str = Form(default=""),
+    db_password: str = Form(default=""),
 ):
     if not request.session.get("username"):
         return JSONResponse({"ok": False, "message": SESSION_EXPIRED}, status_code=401)
@@ -250,6 +270,12 @@ def api_update_server(
     ok, message = update_server(
         server_id, group_name, name, ip.strip(), os_name.strip(), role.strip(), status
     )
+    if ok:
+        # 비밀번호를 비워두면 기존 저장값을 유지한다.
+        db.save_server_credentials(
+            server_id, ssh_port, ssh_user, ssh_password,
+            db_port, db_user, db_password,
+        )
     return JSONResponse({"ok": ok, "message": message}, status_code=200 if ok else 400)
 
 
@@ -405,7 +431,10 @@ def _score_color(score):
 
 
 def _start_scan(server_id: int):
-    """서버 1대 진단을 시작한다. (성공여부, 사유) 반환. 백그라운드 실행."""
+    """서버 1대 진단을 시작한다. (성공여부, 사유) 반환. 백그라운드 실행.
+
+    서버에 SSH/DB 자격증명이 저장돼 있으면 계정 기반 심층 점검까지 함께 수행한다.
+    """
     server = get_server(server_id)
     if server is None:
         return False, "없음"
@@ -415,9 +444,11 @@ def _start_scan(server_id: int):
     current = latest_scan(server_id)
     if current and current["status"] in ("queued", "running"):
         return True, "진행 중"
+
+    creds = db.get_server_credentials(server_id) or None
     scan_id = create_scan(server_id, ip)
     threading.Thread(
-        target=scanner.run_scan, args=(scan_id, server_id, ip), daemon=True
+        target=scanner.run_scan, args=(scan_id, server_id, ip, creds), daemon=True
     ).start()
     return True, "시작"
 
