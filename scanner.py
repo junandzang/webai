@@ -239,6 +239,27 @@ def _enrich_with_nvd(checks, scan_result):
     return source
 
 
+def _run_credentialed(ip, creds):
+    """자격증명이 주어진 항목만 계정 기반 점검을 수행한다.
+
+    creds 예: {"db": {"port":3306,"user":"...","password":"..."},
+               "ssh": {"port":22,"user":"...","password":"..."}}
+    자격증명은 여기서만 쓰이고 반환값·DB에 남기지 않는다.
+    """
+    import credaudit
+
+    out = []
+    ssh = creds.get("ssh")
+    if ssh and ssh.get("user"):
+        out.extend(credaudit.audit_ssh(ip, ssh.get("port") or 22,
+                                       ssh["user"], ssh.get("password") or ""))
+    dbc = creds.get("db")
+    if dbc and dbc.get("user"):
+        out.extend(credaudit.audit_mysql(ip, dbc.get("port") or 3306,
+                                         dbc["user"], dbc.get("password") or ""))
+    return out
+
+
 def _nvd_sev(cve):
     sev = (cve.get("severity") or "").lower()
     if sev in ("critical", "high", "medium", "low"):
@@ -253,8 +274,12 @@ def _nvd_sev(cve):
     return "low"
 
 
-def run_scan(scan_id, server_id, ip):
-    """백그라운드 스레드 엔트리. 스캔을 수행하고 결과를 DB에 기록한다."""
+def run_scan(scan_id, server_id, ip, creds=None):
+    """백그라운드 스레드 엔트리. 스캔을 수행하고 결과를 DB에 기록한다.
+
+    creds가 주어지면 계정 기반 심층 점검(credaudit)을 함께 수행해 같은
+    체크리스트에 합친다. creds는 메모리에서만 쓰이고 저장하지 않는다.
+    """
     try:
         db.set_scan_running(scan_id)
 
@@ -271,6 +296,17 @@ def run_scan(scan_id, server_id, ip):
 
         checks = rules.build_checklist(scan_result)
         source = _enrich_with_nvd(checks, scan_result)
+
+        # 계정 기반 심층 점검 (자격증명이 주어졌을 때만)
+        authed = 0
+        if creds:
+            checks.extend(_run_credentialed(ip, creds))
+            authed = 1
+            # SSH로 정확한 OS를 확인했으면 그 값을 우선한다.
+            for c in checks:
+                if c["category"] == "os" and c["title"].startswith("운영체제 확인:"):
+                    scan_result["os"] = c["title"].split(":", 1)[1].strip()
+                    break
 
         # OS를 파악했으면 서버 레코드에 반영
         if scan_result.get("os"):
@@ -292,6 +328,7 @@ def run_scan(scan_id, server_id, ip):
             scan_source=source,
             counts=counts,
             score=score,
+            authed=authed,
         )
     except subprocess.TimeoutExpired:
         db.set_scan_error(scan_id, "스캔이 시간 초과되었습니다.")

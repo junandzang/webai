@@ -107,6 +107,21 @@ python -m uvicorn app_cce:app --port 8100
 
 > **선행조건**: nmap이 설치돼 있어야 합니다. `.env`의 `NMAP_PATH`로 경로를 지정하거나 PATH에 두세요.
 
+## 계정 기반 심층 점검 (credentialed audit)
+`서버 검사` 화면의 자산별 **계정 점검** 버튼 → SSH·DB 접속 정보를 입력하면 서버 내부까지 점검합니다.
+
+- **입력**: SSH(포트/ID/비밀번호), DB(포트/ID/비밀번호) — 필요한 쪽만 입력해도 됩니다
+- **자격증명은 저장하지 않습니다.** DB·파일·로그 어디에도 남기지 않고 해당 검사에서 메모리로만 사용합니다.
+  재검사 시 다시 입력해야 합니다
+- **읽기 전용**으로만 조회합니다 (설정 변경·쓰기 없음)
+- **DB 점검**(`credaudit.audit_mysql`): 빈 비밀번호·익명 계정, root 원격 접속, 모든 IP 허용(%),
+  과도한 권한(SUPER/GRANT/FILE), `secure_file_priv`·`local_infile`·TLS 설정, test DB, 정확한 버전
+  (역할·잠긴 계정은 오탐 방지를 위해 제외)
+- **SSH 점검**(`credaudit.audit_ssh`): 정확한 배포판·커널 버전, UID 0 계정, 빈 비밀번호 계정,
+  비밀번호 정책, `PermitRootLogin`·`PasswordAuthentication`, `/etc/passwd`·`/etc/shadow` 권한
+- 접속 실패(포트 차단·자격증명 오류)는 오류가 아니라 **정보 항목**으로 남고 나머지 점검은 계속됩니다
+- 결과는 기존 네트워크 스캔과 **한 리포트로 합쳐지며**, `scans.authed=1`로 표시됩니다
+
 ## 구성
 | 파일 | 설명 |
 |---|---|

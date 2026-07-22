@@ -422,6 +422,69 @@ def _start_scan(server_id: int):
     return True, "시작"
 
 
+@app.post("/api/servers/{server_id}/scan/credentialed")
+def api_scan_credentialed(
+    request: Request,
+    server_id: int,
+    ssh_port: str = Form(default=""),
+    ssh_user: str = Form(default=""),
+    ssh_password: str = Form(default=""),
+    db_port: str = Form(default=""),
+    db_user: str = Form(default=""),
+    db_password: str = Form(default=""),
+):
+    """계정 기반 심층 점검.
+
+    자격증명은 DB·파일·로그 어디에도 저장하지 않고, 이 요청으로 시작된
+    백그라운드 스캔에서 메모리로만 사용한다.
+    """
+    if not request.session.get("username"):
+        return JSONResponse({"ok": False, "message": SESSION_EXPIRED}, status_code=401)
+
+    server = get_server(server_id)
+    if server is None:
+        return JSONResponse(
+            {"ok": False, "message": "존재하지 않는 서버입니다."}, status_code=404
+        )
+    ip = (server["ip"] or "").strip()
+    if not ip:
+        return JSONResponse(
+            {"ok": False, "message": "이 서버에 IP가 없습니다."}, status_code=400
+        )
+
+    creds = {}
+    if ssh_user.strip():
+        creds["ssh"] = {
+            "port": int(ssh_port) if ssh_port.strip().isdigit() else 22,
+            "user": ssh_user.strip(), "password": ssh_password,
+        }
+    if db_user.strip():
+        creds["db"] = {
+            "port": int(db_port) if db_port.strip().isdigit() else 3306,
+            "user": db_user.strip(), "password": db_password,
+        }
+    if not creds:
+        return JSONResponse(
+            {"ok": False, "message": "SSH 또는 DB 계정 중 하나는 입력해야 합니다."},
+            status_code=400,
+        )
+
+    current = latest_scan(server_id)
+    if current and current["status"] in ("queued", "running"):
+        return JSONResponse(
+            {"ok": True, "message": "이미 검사가 진행 중입니다.", "scan_id": current["id"]}
+        )
+
+    scan_id = create_scan(server_id, ip)
+    threading.Thread(
+        target=scanner.run_scan, args=(scan_id, server_id, ip, creds), daemon=True
+    ).start()
+    # 응답에 자격증명을 절대 포함하지 않는다.
+    return JSONResponse(
+        {"ok": True, "message": "계정 점검을 시작했습니다.", "scan_id": scan_id}
+    )
+
+
 @app.get("/diagnosis", response_class=HTMLResponse)
 def diagnosis(request: Request):
     if not request.session.get("username"):

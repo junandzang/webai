@@ -66,6 +66,8 @@
           </div>
         </div>
         <span class="scan-state" data-id="{{ a.id }}"></span>
+        <button type="button" class="da-cred" data-id="{{ a.id }}"
+                data-name="{{ a.name }}" data-ip="{{ a.ip or '' }}">계정 점검</button>
         <a class="da-report" href="/servers/{{ a.id }}">리포트</a>
       </article>
       {% else %}
@@ -73,6 +75,59 @@
       {% endfor %}
     </div>
   </section>
+</div>
+
+<!-- 계정 점검 (자격증명 입력) 팝업 -->
+<div class="modal-overlay" id="credModal">
+  <div class="modal">
+    <h2>계정 점검</h2>
+    <div class="modal-msg" id="credMsg" role="alert"></div>
+    <p class="cred-target"><strong id="credName"></strong> <span id="credIp"></span></p>
+
+    <form id="credForm" autocomplete="off">
+      <p class="cred-sec">SSH (호스트 점검)</p>
+      <div class="cred-grid">
+        <div>
+          <label for="ssh_port">포트</label>
+          <input type="text" id="ssh_port" name="ssh_port" value="22" inputmode="numeric">
+        </div>
+        <div>
+          <label for="ssh_user">계정(ID)</label>
+          <input type="text" id="ssh_user" name="ssh_user" placeholder="예: root" autocomplete="off">
+        </div>
+        <div>
+          <label for="ssh_password">비밀번호</label>
+          <input type="password" id="ssh_password" name="ssh_password" autocomplete="new-password">
+        </div>
+      </div>
+
+      <p class="cred-sec">DB (MySQL/MariaDB 점검)</p>
+      <div class="cred-grid">
+        <div>
+          <label for="db_port">포트</label>
+          <input type="text" id="db_port" name="db_port" value="3306" inputmode="numeric">
+        </div>
+        <div>
+          <label for="db_user">계정(ID)</label>
+          <input type="text" id="db_user" name="db_user" placeholder="예: root" autocomplete="off">
+        </div>
+        <div>
+          <label for="db_password">비밀번호</label>
+          <input type="password" id="db_password" name="db_password" autocomplete="new-password">
+        </div>
+      </div>
+
+      <p class="cred-note">
+        🔒 입력한 계정 정보는 <b>저장되지 않으며</b> 이번 검사에만 사용됩니다.
+        점검은 <b>읽기 전용</b>으로만 수행합니다. SSH·DB 중 필요한 쪽만 입력해도 됩니다.
+      </p>
+
+      <div class="modal-actions">
+        <button type="button" class="cancel-btn" onclick="closeCredModal()">취소</button>
+        <button type="submit" class="save-btn">검사 시작</button>
+      </div>
+    </form>
+  </div>
 </div>
 {% endblock %}
 
@@ -152,6 +207,53 @@
       });
     } catch(e) { alert('요청 실패'); }
     finally { scanBtn.disabled = false; }
+  });
+
+  /* ===== 계정 점검 (자격증명 입력) ===== */
+  const credModal = document.getElementById('credModal');
+  const credForm = document.getElementById('credForm');
+  const credMsg = document.getElementById('credMsg');
+  let credId = null;
+
+  function closeCredModal() {
+    credModal.classList.remove('open');
+    credForm.reset();               // 입력값(비밀번호)을 화면에서 즉시 비운다
+  }
+  credModal.addEventListener('click', e => { if (e.target === credModal) closeCredModal(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeCredModal(); });
+
+  // 서버명은 data 속성으로 전달 (인라인 onclick은 따옴표에서 깨진다)
+  document.querySelectorAll('.da-cred').forEach(btn => {
+    btn.addEventListener('click', () => {
+      credId = btn.dataset.id;
+      credForm.reset();
+      credMsg.className = 'modal-msg';
+      document.getElementById('credName').textContent = btn.dataset.name;
+      document.getElementById('credIp').textContent = btn.dataset.ip || '';
+      credModal.classList.add('open');
+      credForm.db_user.focus();
+    });
+  });
+
+  credForm.addEventListener('submit', async e => {
+    e.preventDefault();
+    credMsg.className = 'modal-msg';
+    const body = new URLSearchParams(new FormData(credForm));
+    try {
+      const res = await fetch(`/api/servers/${credId}/scan/credentialed`,
+                              { method: 'POST', body });
+      const j = await res.json();
+      credMsg.textContent = j.message;
+      credMsg.className = 'modal-msg ' + (j.ok ? 'ok' : 'error') + ' show';
+      if (j.ok) {
+        const el = document.querySelector(`.scan-state[data-id="${credId}"]`);
+        if (el) { el.className = 'scan-state running'; el.textContent = '검사 중…'; poll(credId); }
+        setTimeout(closeCredModal, 900);   // 비밀번호가 화면에 남지 않도록 곧 닫는다
+      }
+    } catch (err) {
+      credMsg.textContent = '요청 처리 중 오류가 발생했습니다.';
+      credMsg.className = 'modal-msg error show';
+    }
   });
 
   /* 페이지 로드 시 진행 중 스캔 반영 */

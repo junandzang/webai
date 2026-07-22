@@ -319,18 +319,19 @@ def set_scan_error(scan_id: int, message: str):
 
 
 def set_scan_done(scan_id: int, os_detected: str, scan_source: str, counts: dict,
-                  score: float = None):
+                  score: float = None, authed: int = 0):
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 "UPDATE scans SET status = 'done', os_detected = %s, "
                 "scan_source = %s, crit = %s, high = %s, med = %s, low = %s, "
-                "info = %s, score = %s, finished_at = NOW() WHERE id = %s",
+                "info = %s, score = %s, authed = %s, finished_at = NOW() "
+                "WHERE id = %s",
                 (
                     os_detected[:120], scan_source,
                     counts.get("critical", 0), counts.get("high", 0),
                     counts.get("medium", 0), counts.get("low", 0),
-                    counts.get("info", 0), score, scan_id,
+                    counts.get("info", 0), score, authed, scan_id,
                 ),
             )
 

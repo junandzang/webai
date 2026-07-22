@@ -13,4 +13,6 @@ sh.CurrentDirectory = baseDir
 
 ' 0 = 창 숨김, False = 종료를 기다리지 않음
 sh.Run "cmd /c python -m uvicorn app:app --host 127.0.0.1 --port 8000 >> server.log 2>&1", 0, False
-sh.Run "cmd /c python -m uvicorn app_cce:app --host 127.0.0.1 --port 8100 >> cce.log 2>&1", 0, False
+
+' 8100(SolidStep 스타일 콘솔)은 사용하지 않아 자동 시작에서 제외한다.
+' 필요하면 run_8100.bat 으로 수동 실행할 수 있다.
