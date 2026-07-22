@@ -1,5 +1,7 @@
 """DB 접속, 운영자 계정, 서버 목록 관련 헬퍼."""
 
+import math
+
 import bcrypt
 import pymysql
 
@@ -508,14 +510,18 @@ SEVERITY_KO = {"critical": "최상", "high": "상", "medium": "중",
 # 체크 결과 -> SolidStep 3분류
 RESULT_GROUP = {"fail": "취약", "warn": "취약", "info": "수동 점검", "pass": "양호"}
 
-# 점수 감점: 취약 항목 1건당 심각도별 기본 감점 점수
-SEVERITY_PENALTY = {"critical": 15.0, "high": 8.0, "medium": 4.0, "low": 1.5, "info": 0.0}
+# 점수 감점: 취약 항목 1건당 심각도별 기본 감점 점수.
+# 아래 점감 곡선을 통과하면 첫 건이 가장 크게 깎이고 이후는 완만해지므로,
+# "1건만 있어도 확실히 티가 나도록" 건당 가중치를 넉넉히 잡는다.
+SEVERITY_PENALTY = {"critical": 40.0, "high": 12.0, "medium": 5.0, "low": 2.0, "info": 0.0}
 # 결과별 감점 계수 (확정 취약보다 '주의'는 가볍게)
 RESULT_FACTOR = {"fail": 1.0, "warn": 0.6}
-# 심각도 tier별 감점 상한.
-# 비슷한 지적이 여러 건 나와도 점수가 0으로 눌려 변별력을 잃지 않게 한다.
-# (예: 노출 포트 10건이면 등급은 낮아지되, 더 심각한 서버와는 여전히 구분되어야 한다)
-SEVERITY_CAP = {"critical": 55.0, "high": 40.0, "medium": 20.0, "low": 15.0, "info": 0.0}
+# 심각도 tier별 감점 한계치(soft cap).
+# 하드 컷이 아니라 점감(diminishing) 방식으로 적용한다:
+#     감점 = cap x (1 - e^(-raw/cap))
+# 지적이 늘수록 감점 증가폭이 줄어들어, 항목이 많아도 0점으로 눌리지 않으면서
+# "4건짜리 서버"와 "15건짜리 서버"의 차이는 그대로 유지된다.
+SEVERITY_CAP = {"critical": 55.0, "high": 45.0, "medium": 20.0, "low": 15.0, "info": 0.0}
 
 
 def compute_score(checks) -> float:
@@ -536,9 +542,12 @@ def compute_score(checks) -> float:
             SEVERITY_PENALTY.get(sev, 1.0) * factor
 
     penalty = 0.0
-    for sev, p in tier_penalty.items():
-        cap = SEVERITY_CAP.get(sev)
-        penalty += min(p, cap) if cap is not None else p
+    for sev, raw in tier_penalty.items():
+        cap = SEVERITY_CAP.get(sev, 20.0)
+        if cap <= 0:
+            continue
+        # 점감 적용: 처음 몇 건은 크게, 이후로는 완만하게 깎인다.
+        penalty += cap * (1.0 - math.exp(-raw / cap))
 
     return round(max(0.0, 100.0 - penalty), 1)
 
