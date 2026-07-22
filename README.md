@@ -34,15 +34,42 @@ python -m uvicorn app:app --host 127.0.0.1 --port 8000
 
 **간편 실행**: `run_8000.bat` 더블클릭 (8100은 `run_8100.bat`). 창을 닫으면 서버도 종료됩니다.
 
-**자동 시작(로그온 시)**: 작업 스케줄러에 `operator-site` 작업으로 등록되어 있습니다.
-`start_servers.vbs`가 8000·8100을 창 없이 백그라운드로 띄웁니다.
+### 서비스처럼 켜고 끄기
+프로젝트 폴더의 배치 파일을 **더블클릭**하면 됩니다.
+
+| 파일 | 동작 |
+|---|---|
+| `서버시작.bat` | 시작 (이미 떠 있으면 그대로 둠) |
+| `서버중지.bat` | 중지 |
+| `서버재시작.bat` | 재시작 |
+| `서버상태.bat` | 상태·HTTP 응답 확인 |
+
+명령줄에서는 `svc.ps1`을 직접 쓸 수 있습니다.
 ```powershell
-Start-ScheduledTask -TaskName 'operator-site'      # 지금 바로 시작
-Get-ScheduledTaskInfo -TaskName 'operator-site'    # 마지막 실행 결과 확인
-Unregister-ScheduledTask -TaskName 'operator-site' # 자동 시작 해제
+powershell -ExecutionPolicy Bypass -File svc.ps1 -Action start|stop|restart|status
 ```
-> 관리자 권한이 없어 진짜 Windows 서비스(sc/NSSM) 대신 작업 스케줄러를 사용합니다.
-> 서버를 내리려면 `Get-Process python | Stop-Process` 또는 해당 PID를 종료하세요.
+
+### 자동 시작 + 자동 복구 (작업 스케줄러)
+`operator-site` 작업이 **로그온 시 시작**하고 **10분마다 상태를 확인**합니다.
+떠 있으면 아무것도 하지 않고, 죽어 있으면 다시 띄웁니다(감시자).
+```powershell
+Start-ScheduledTask   -TaskName 'operator-site'   # 지금 바로 실행
+Get-ScheduledTaskInfo -TaskName 'operator-site'   # 마지막 실행 결과
+Unregister-ScheduledTask -TaskName 'operator-site' -Confirm:$false   # 해제
+```
+
+> **왜 진짜 Windows 서비스가 아닌가**: `sc create` / NSSM 은 관리자 권한이 필요한데
+> 현재 계정에는 없습니다(`OpenSCManager FAILED 5: Access is denied`).
+> 관리자 권한을 쓸 수 있게 되면 아래로 정식 서비스 등록이 가능합니다.
+> ```powershell
+> # 관리자 PowerShell에서
+> choco install nssm            # 또는 nssm.exe 직접 내려받기
+> nssm install OperatorSite "C:\Python314\python.exe" "-m uvicorn app:app --host 127.0.0.1 --port 8000"
+> nssm set OperatorSite AppDirectory "C:\Users\hjunni112\operator-site"
+> nssm set OperatorSite AppStdout "C:\Users\hjunni112\operator-site\server.log"
+> nssm set OperatorSite Start SERVICE_AUTO_START
+> nssm start OperatorSite
+> ```
 
 ### (선택) SolidStep 스타일 UI — 포트 8100
 같은 DB·스캔 엔진을 공유하는 별도 디자인의 콘솔입니다. 8000과 동시에 띄울 수 있습니다.
