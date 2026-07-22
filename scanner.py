@@ -239,11 +239,12 @@ def _enrich_with_nvd(checks, scan_result):
     return source
 
 
-def _run_credentialed(ip, creds):
+def _run_credentialed(ip, creds, reachable=None):
     """자격증명이 주어진 항목만 계정 기반 점검을 수행한다.
 
     creds 예: {"db": {"port":3306,"user":"...","password":"..."},
                "ssh": {"port":22,"user":"...","password":"..."}}
+    reachable: nmap이 외부에서 열려 있다고 확인한 포트 집합.
     자격증명은 여기서만 쓰이고 반환값·DB에 남기지 않는다.
     """
     import credaudit
@@ -252,7 +253,8 @@ def _run_credentialed(ip, creds):
     ssh = creds.get("ssh")
     if ssh and ssh.get("user"):
         out.extend(credaudit.audit_ssh(ip, ssh.get("port") or 22,
-                                       ssh["user"], ssh.get("password") or ""))
+                                       ssh["user"], ssh.get("password") or "",
+                                       reachable=reachable))
     dbc = creds.get("db")
     if dbc and dbc.get("user"):
         out.extend(credaudit.audit_mysql(ip, dbc.get("port") or 3306,
@@ -301,7 +303,10 @@ def run_scan(scan_id, server_id, ip, creds=None):
         authed = 0
         if creds:
             import credaudit
-            checks.extend(_run_credentialed(ip, creds))
+            # nmap이 외부에서 열려 있다고 확인한 포트 → LISTEN 목록과 대조해
+            # '실제로 밖에서 닿는 포트'를 가려낸다.
+            reachable = {p["port"] for p in scan_result["ports"] if p["state"] == "open"}
+            checks.extend(_run_credentialed(ip, creds, reachable))
             authed = 1
             # SSH로 정확한 OS를 확인했으면 그 값을 우선한다.
             for c in checks:

@@ -512,8 +512,10 @@ RESULT_GROUP = {"fail": "취약", "warn": "취약", "info": "수동 점검", "pa
 SEVERITY_PENALTY = {"critical": 15.0, "high": 8.0, "medium": 4.0, "low": 1.5, "info": 0.0}
 # 결과별 감점 계수 (확정 취약보다 '주의'는 가볍게)
 RESULT_FACTOR = {"fail": 1.0, "warn": 0.6}
-# 낮은 심각도(하) 항목이 많아도 점수를 과도하게 깎지 않도록 tier별 감점 상한
-SEVERITY_CAP = {"low": 15.0, "info": 0.0}
+# 심각도 tier별 감점 상한.
+# 비슷한 지적이 여러 건 나와도 점수가 0으로 눌려 변별력을 잃지 않게 한다.
+# (예: 노출 포트 10건이면 등급은 낮아지되, 더 심각한 서버와는 여전히 구분되어야 한다)
+SEVERITY_CAP = {"critical": 55.0, "high": 40.0, "medium": 20.0, "low": 15.0, "info": 0.0}
 
 
 def compute_score(checks) -> float:

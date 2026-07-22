@@ -312,11 +312,245 @@ def _mysql_settings(cur, port):
     return checks
 
 
+# ===== LISTEN 포트 인벤토리 =====
+#
+# nmap은 '밖에서 보이는 상위 N개 포트'만 본다. SSH로 접속하면 서버가 실제로
+# 열어둔 모든 소켓을 프로세스·바인드 주소까지 정확히 알 수 있다.
+
+# 프로세스명 -> 조치 방법 (수정할 파일 경로까지 명시)
+LISTEN_FIX = {
+    "mariadbd": ("MariaDB", "/etc/my.cnf.d/mariadb-server.cnf (또는 /etc/my.cnf)",
+                 "[mysqld] 섹션에 bind-address=127.0.0.1 을 추가(외부 앱이 쓰면 내부 IP로) 후 "
+                 "`systemctl restart mariadb`. skip-networking 을 쓰면 TCP를 완전히 닫습니다."),
+    "mysqld": ("MySQL", "/etc/my.cnf (또는 /etc/mysql/mysql.conf.d/mysqld.cnf)",
+               "[mysqld] 섹션에 bind-address=127.0.0.1 추가 후 `systemctl restart mysqld`."),
+    "redis-server": ("Redis", "/etc/redis.conf (또는 /etc/redis/redis.conf)",
+                     "bind 127.0.0.1 ::1 과 protected-mode yes 를 설정하고 requirepass 를 지정한 뒤 "
+                     "`systemctl restart redis`."),
+    "mongod": ("MongoDB", "/etc/mongod.conf",
+               "net.bindIp 를 127.0.0.1 로 제한하고 security.authorization: enabled 설정 후 "
+               "`systemctl restart mongod`."),
+    "rpcbind": ("rpcbind(NFS)", "systemd 유닛",
+                "NFS를 쓰지 않으면 `systemctl disable --now rpcbind rpcbind.socket` 으로 끄세요. "
+                "필요하면 /etc/hosts.allow 로 접근 IP를 제한하세요."),
+    "rpc.statd": ("rpc.statd(NFS)", "/etc/sysconfig/nfs (또는 /etc/nfs.conf)",
+                  "NFS 클라이언트를 쓰지 않으면 `systemctl disable --now rpc-statd nfs-client.target`. "
+                  "써야 하면 STATD_PORT 를 고정한 뒤 방화벽에서 해당 포트만 허용하세요."),
+    "sshd": ("SSH", "/etc/ssh/sshd_config",
+             "ListenAddress 로 바인드 주소를 제한하고, AllowUsers/AllowGroups 로 접속 계정을 좁히세요. "
+             "방화벽에서는 관리자 IP만 허용하는 것이 안전합니다."),
+    "nginx": ("nginx", "/etc/nginx/nginx.conf 및 /etc/nginx/conf.d/*.conf",
+              "외부 공개가 필요 없는 서비스는 listen 지시자를 127.0.0.1:포트 로 바꾸세요. "
+              "수정 후 `nginx -t && systemctl reload nginx`."),
+    "httpd": ("Apache", "/etc/httpd/conf/httpd.conf",
+              "Listen 지시자를 127.0.0.1:포트 로 제한한 뒤 `apachectl configtest && systemctl reload httpd`."),
+    "master": ("Postfix", "/etc/postfix/main.cf",
+               "외부 메일 수신이 필요 없으면 inet_interfaces = loopback-only 로 바꾸고 "
+               "`systemctl restart postfix`."),
+    "dovecot": ("Dovecot", "/etc/dovecot/dovecot.conf",
+                "listen = 127.0.0.1 로 제한하거나, 필요한 프로토콜만 protocols 에 남기세요."),
+    "cupsd": ("CUPS(인쇄)", "/etc/cups/cupsd.conf",
+              "서버에 프린터가 없으면 `systemctl disable --now cups cups.socket`. "
+              "쓰면 Listen localhost:631 로 제한하세요."),
+    "named": ("BIND(DNS)", "/etc/named.conf",
+              "listen-on { 127.0.0.1; }; 과 allow-query 로 제한하세요."),
+    "smbd": ("Samba", "/etc/samba/smb.conf",
+             "interfaces = lo eth0 과 bind interfaces only = yes 로 제한하세요."),
+    "docker-proxy": ("Docker 포트 게시", "docker run/compose 설정",
+                     "포트 게시를 127.0.0.1:호스트포트:컨테이너포트 형식으로 바꾸세요. "
+                     "docker-compose.yml 의 ports 항목을 수정합니다."),
+    "chronyd": ("chrony(NTP)", "/etc/chrony.conf",
+                "127.0.0.1:323 은 로컬 제어용이라 정상입니다. 외부 바인드라면 "
+                "allow 지시자를 제거하세요."),
+}
+
+# 이 포트들은 서비스 목적상 열려 있는 게 자연스러워 별도 항목으로 중복 지적하지 않는다.
+_EXPECTED_PORTS = {80, 443, 22}
+
+
+def _detect_firewall(client, password):
+    """호스트 방화벽 상태를 파악한다. (요약문자열, 위험여부)"""
+    fw_active = _run(client, "systemctl is-active firewalld 2>/dev/null").strip()
+    ufw = _run(client, "command -v ufw >/dev/null && ufw status 2>/dev/null | head -1").strip()
+    policy = _run(client, "iptables -S 2>/dev/null | grep -E '^-P INPUT'",
+                  password=password, sudo=True).strip()
+
+    if fw_active == "active":
+        return "firewalld 활성", False
+    if ufw.lower().startswith("status: active"):
+        return "ufw 활성", False
+    if policy and "ACCEPT" not in policy:
+        return f"iptables 기본정책 {policy}", False
+    return (f"firewalld 비활성, iptables INPUT 정책 ACCEPT"
+            if policy else "호스트 방화벽 미확인"), True
+
+
+def _parse_ss(out):
+    """`ss -lntupH` 출력을 파싱해 소켓 목록을 만든다."""
+    socks = []
+    for line in out.splitlines():
+        parts = line.split()
+        if len(parts) < 5:
+            continue
+        proto, state = parts[0], parts[1]
+        if proto not in ("tcp", "udp"):
+            continue
+        local = parts[4]
+        if ":" not in local:
+            continue
+        addr, _, port = local.rpartition(":")
+        if not port.isdigit():
+            continue
+        proc = ""
+        m = [p for p in parts if p.startswith("users:")]
+        if m:
+            # users:(("nginx",pid=1,fd=6),...) 에서 첫 프로세스명만 취한다
+            seg = m[0]
+            if '"' in seg:
+                proc = seg.split('"')[1]
+        socks.append({"proto": proto, "state": state, "addr": addr.strip("[]"),
+                      "port": int(port), "proc": proc})
+    return socks
+
+
+def _bind_scope(addr):
+    if addr in ("0.0.0.0", "::", "*", ""):
+        return "all"
+    if addr.startswith("127.") or addr in ("::1",):
+        return "local"
+    return "iface"
+
+
+def audit_listening_ports(client, password, reachable=None):
+    """서버가 실제로 LISTEN 중인 모든 포트를 조회해 위험도와 조치를 제시한다.
+
+    reachable: nmap으로 외부에서 도달 확인된 포트 집합(있으면 위험도를 높인다).
+    """
+    reachable = set(reachable or [])
+    out = _run(client, "ss -lntupH", password=password, sudo=True)
+    if not out:
+        out = _run(client, "netstat -lntup 2>/dev/null")
+    if not out:
+        return [_item(
+            "port", "LISTEN 포트 조회 불가", "info", "info",
+            "ss/netstat 를 실행하지 못해 실제 열린 포트 목록을 확인하지 못했습니다.",
+            "점검 계정에 ss 실행 권한(또는 sudo)을 부여하세요.",
+        )]
+
+    socks = _parse_ss(out)
+    if not socks:
+        return []
+
+    fw_summary, fw_risky = _detect_firewall(client, password)
+    checks = []
+
+    # 0) 방화벽 상태
+    if fw_risky:
+        checks.append(_item(
+            "port", "호스트 방화벽 미적용", "high", "fail",
+            f"{fw_summary} 상태입니다. 모든 인터페이스에 바인드된 서비스가 "
+            "네트워크에서 그대로 접근 가능해집니다.",
+            "firewalld를 켜고 필요한 포트만 여세요.\n"
+            "  systemctl enable --now firewalld\n"
+            "  firewall-cmd --permanent --add-service=ssh\n"
+            "  firewall-cmd --permanent --add-port=80/tcp\n"
+            "  firewall-cmd --reload\n"
+            "영구 설정은 /etc/firewalld/zones/public.xml 에 저장됩니다. "
+            "iptables를 직접 쓰면 규칙을 /etc/sysconfig/iptables 에 저장하세요.",
+            evidence=fw_summary, ref_url=REF["firewall"],
+        ))
+    else:
+        checks.append(_item(
+            "port", f"호스트 방화벽 동작 중 ({fw_summary})", "info", "pass",
+            "방화벽이 활성 상태입니다.",
+            "허용 규칙을 주기적으로 검토해 불필요한 포트를 닫으세요.",
+            evidence=fw_summary, ref_url=REF["firewall"],
+        ))
+
+    # 1) 전체 인터페이스 바인드 + 외부 도달 확인 → 개별 지적
+    all_bind = [s for s in socks if _bind_scope(s["addr"]) == "all"]
+    seen = set()
+    exposed = []
+    for s in all_bind:
+        key = (s["port"], s["proto"])
+        if key in seen:
+            continue
+        seen.add(key)
+        (exposed if s["port"] in reachable else []).append(s)
+
+    for s in exposed:
+        if s["port"] in _EXPECTED_PORTS:
+            continue    # 웹/SSH는 별도 항목에서 이미 다룬다
+        name, path, how = LISTEN_FIX.get(
+            s["proc"],
+            (s["proc"] or "알 수 없는 서비스", "해당 서비스 설정 파일",
+             "서비스가 필요한지 확인하고, 불필요하면 중지하세요. "
+             "필요하면 바인드 주소를 127.0.0.1 또는 내부 IP로 제한하세요."),
+        )
+        checks.append(_item(
+            "port", f"외부 노출 확인: {s['port']}/{s['proto']} ({name})",
+            "high", "fail",
+            f"프로세스 `{s['proc'] or '미상'}` 가 {s['addr']}:{s['port']} 로 모든 인터페이스에 "
+            "바인드되어 있고, 외부에서 실제로 접속이 확인되었습니다.",
+            f"[{name}] 수정 대상: {path}\n{how}\n"
+            f"확인: `ss -lntp | grep :{s['port']}` 로 바인드 주소가 바뀌었는지 점검하세요.",
+            port=s["port"], evidence=f"{s['proto']} {s['addr']}:{s['port']} {s['proc']}",
+            ref_url=REF["firewall"],
+        ))
+
+    # 2) 전체 인터페이스 바인드지만 외부 도달은 확인되지 않음 → 묶어서 주의
+    latent = [s for s in all_bind
+              if s["port"] not in reachable and s["port"] not in _EXPECTED_PORTS]
+    if latent:
+        uniq = sorted({(s["port"], s["proto"], s["proc"]) for s in latent})
+        listing = ", ".join(f"{p}/{pr}({pc or '미상'})" for p, pr, pc in uniq[:20])
+        checks.append(_item(
+            "port", f"전체 인터페이스 바인드 {len(uniq)}건 (외부 도달 미확인)",
+            "medium", "warn",
+            "0.0.0.0/[::] 로 바인드되어 있어 네트워크 경로만 열리면 바로 노출됩니다. "
+            f"현재는 상위 방화벽에 가려진 것으로 보입니다: {listing}",
+            "필요 없는 서비스는 중지하고, 필요한 것은 바인드 주소를 127.0.0.1 또는 "
+            "내부 IP로 제한하세요. 서비스별 설정 파일은 각 항목의 조치 안내를 참고하세요.\n"
+            "예) MariaDB → /etc/my.cnf.d/mariadb-server.cnf 의 bind-address\n"
+            "    Redis   → /etc/redis.conf 의 bind\n"
+            "    NFS     → systemctl disable --now rpcbind",
+            evidence="\n".join(f"{pr} 0.0.0.0:{p} {pc}" for p, pr, pc in uniq),
+            ref_url=REF["firewall"],
+        ))
+
+    # 3) 로컬 전용 바인드 → 양호
+    local = sorted({(s["port"], s["proto"], s["proc"])
+                    for s in socks if _bind_scope(s["addr"]) == "local"})
+    if local:
+        checks.append(_item(
+            "port", f"로컬 전용 바인드 {len(local)}건", "info", "pass",
+            "127.0.0.1/[::1] 에만 바인드되어 외부에서 접근할 수 없습니다: "
+            + ", ".join(f"{p}/{pr}({pc or '미상'})" for p, pr, pc in local[:15]),
+            "현재 설정을 유지하세요.",
+            evidence="\n".join(f"{pr} localhost:{p} {pc}" for p, pr, pc in local),
+        ))
+
+    # 4) 전체 인벤토리 요약 (nmap이 놓친 포트 파악용)
+    tcp_ports = sorted({s["port"] for s in socks if s["proto"] == "tcp"})
+    missed = sorted(p for p in tcp_ports if p not in reachable)
+    checks.append(_item(
+        "port", f"LISTEN 포트 인벤토리 (TCP {len(tcp_ports)}개)", "info", "info",
+        "서버에서 직접 수집한 실제 LISTEN 목록입니다. "
+        + (f"이 중 {len(missed)}개는 외부 스캔으로는 확인되지 않았습니다." if missed else ""),
+        "정기적으로 이 목록을 검토해 용도가 불분명한 서비스를 정리하세요.",
+        evidence="TCP: " + ", ".join(map(str, tcp_ports)),
+    ))
+    return checks
+
+
 # ===== SSH (Linux 호스트) =====
 
 
-def audit_ssh(host, port, user, password):
-    """SSH로 접속해 OS·계정정책·권한을 점검한다. 읽기 전용 명령만 실행."""
+def audit_ssh(host, port, user, password, reachable=None):
+    """SSH로 접속해 OS·계정정책·권한·LISTEN 포트를 점검한다. 읽기 전용 명령만 실행.
+
+    reachable: nmap이 외부에서 도달 확인한 포트 집합.
+    """
     try:
         import paramiko
     except ImportError:
@@ -397,6 +631,7 @@ def audit_ssh(host, port, user, password):
         checks.extend(_ssh_accounts(client, password))
         checks.extend(_ssh_sshd(client, port, password))
         checks.extend(_ssh_permissions(client))
+        checks.extend(audit_listening_ports(client, password, reachable))
     except Exception as e:
         checks.append(_item(
             "os", "SSH 점검 중 오류", "info", "info",
