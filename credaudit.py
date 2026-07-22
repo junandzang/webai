@@ -12,10 +12,11 @@
 반환 항목은 rules.py의 체크 항목 dict와 동일한 형식이다.
 """
 
-import socket
+import os
 
 import pymysql
 
+import config
 from rules import REF, _item
 
 CONNECT_TIMEOUT = 8
@@ -320,14 +321,48 @@ def audit_ssh(host, port, user, password):
             "pip install paramiko 후 다시 시도하세요.",
         )]
 
+    known_hosts = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                               "ssh_known_hosts")
     client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    # 파일이 있을 때만 읽는다. (없는 경로를 load하면 paramiko가 예외를 던진다)
+    if os.path.exists(known_hosts):
+        try:
+            client.load_host_keys(known_hosts)
+        except Exception:
+            pass
+    first_seen = client.get_host_keys().lookup(
+        host if int(port) == 22 else f"[{host}]:{int(port)}") is None
+
+    # 처음 보는 호스트는 기록(TOFU)하고, 이미 아는 호스트의 키가 바뀌면 거부한다.
+    # STRICT 모드에서는 등록되지 않은 호스트도 거부한다.
+    if config.SSH_STRICT_HOST_KEY and first_seen:
+        return [_item(
+            "os", f"SSH 호스트키 미등록 ({port}/tcp)", "high", "fail",
+            "엄격 모드(SSH_STRICT_HOST_KEY=1)에서 등록되지 않은 호스트키입니다. "
+            "중간자 공격을 막기 위해 접속을 거부했습니다.",
+            f"신뢰할 수 있는 경로로 확인한 뒤 {known_hosts} 에 호스트키를 등록하세요.",
+            port=int(port), ref_url=REF["ssh"],
+        )]
+    client.set_missing_host_key_policy(
+        paramiko.AutoAddPolicy() if first_seen else paramiko.RejectPolicy()
+    )
+
     try:
         client.connect(
             hostname=host, port=int(port), username=user, password=password,
             timeout=CONNECT_TIMEOUT, banner_timeout=CONNECT_TIMEOUT,
             auth_timeout=CONNECT_TIMEOUT, look_for_keys=False, allow_agent=False,
         )
+    except paramiko.BadHostKeyException as e:
+        # 등록된 키와 다르다 = 서버 교체 또는 중간자 공격
+        return [_item(
+            "os", f"SSH 호스트키 불일치 ({port}/tcp)", "critical", "fail",
+            "이전에 접속했던 호스트키와 다릅니다. 중간자(MITM) 공격이거나 서버가 "
+            f"교체된 경우입니다. 예상 지문과 실제 지문이 다릅니다: {_safe_err(e)}",
+            "서버 담당자에게 호스트키 변경 여부를 확인하세요. 정상 교체라면 "
+            f"{known_hosts} 의 해당 항목을 삭제한 뒤 다시 점검하세요.",
+            port=int(port), ref_url=REF["ssh"],
+        )]
     except Exception as e:
         return [_item(
             "os", f"SSH 접속 불가 ({port}/tcp)", "info", "info",
@@ -339,9 +374,23 @@ def audit_ssh(host, port, user, password):
 
     checks = []
     try:
+        if first_seen:
+            # 새로 신뢰한 호스트키를 저장하고 사실을 기록으로 남긴다.
+            try:
+                client.save_host_keys(known_hosts)
+            except Exception:
+                pass
+            checks.append(_item(
+                "os", "SSH 호스트키 신규 등록", "info", "info",
+                "처음 접속한 호스트라 호스트키를 신뢰 목록에 등록했습니다. "
+                "다음 점검부터는 키가 바뀌면 접속을 거부합니다.",
+                "최초 등록 시점의 중간자 공격을 배제하려면 서버에서 직접 지문을 "
+                "확인하세요(ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub).",
+                port=int(port), ref_url=REF["ssh"],
+            ))
         checks.extend(_ssh_os(client))
-        checks.extend(_ssh_accounts(client))
-        checks.extend(_ssh_sshd(client, port))
+        checks.extend(_ssh_accounts(client, password))
+        checks.extend(_ssh_sshd(client, port, password))
         checks.extend(_ssh_permissions(client))
     except Exception as e:
         checks.append(_item(
@@ -354,13 +403,29 @@ def audit_ssh(host, port, user, password):
     return checks
 
 
-def _run(client, cmd):
-    """읽기 전용 명령 실행 후 stdout을 반환한다. 실패 시 빈 문자열."""
+def _run(client, cmd, password=None, sudo=False):
+    """읽기 전용 명령 실행 후 stdout을 반환한다. 실패 시 빈 문자열.
+
+    sudo=True면 `sudo -S -p ''` 로 권한을 올려 실행하고 비밀번호를 stdin으로 넘긴다.
+    PTY(get_pty)는 쓰지 않는다 — PTY를 쓰면 입력한 비밀번호가 stdout으로 그대로
+    echo 되어 근거(evidence)에 유출된다.
+    """
+    if sudo:
+        if not password:
+            return ""
+        cmd = "sudo -S -p '' " + cmd
     try:
-        _in, out, _err = client.exec_command(cmd, timeout=SSH_CMD_TIMEOUT)
-        return out.read().decode("utf-8", "replace").strip()
+        stdin, out, _err = client.exec_command(cmd, timeout=SSH_CMD_TIMEOUT)
+        if sudo:
+            stdin.write(password + "\n")
+            stdin.flush()
+        text = out.read().decode("utf-8", "replace").strip()
     except Exception:
         return ""
+    # 만에 하나 출력에 비밀번호가 섞이면 제거한다.
+    if password:
+        text = text.replace(password, "***")
+    return text
 
 
 def _ssh_os(client):
@@ -397,7 +462,7 @@ def _ssh_os(client):
     return checks
 
 
-def _ssh_accounts(client):
+def _ssh_accounts(client, password=None):
     checks = []
     # UID 0 계정 (root 외 존재 시 위험)
     uid0 = [x for x in _run(client, "awk -F: '($3==0){print $1}' /etc/passwd").split() if x]
@@ -411,9 +476,12 @@ def _ssh_accounts(client):
             evidence=" ".join(uid0),
         ))
 
-    # 빈 비밀번호 계정 (shadow 읽기 권한이 있을 때만)
-    empty = [x for x in _run(
-        client, "awk -F: '($2==\"\"){print $1}' /etc/shadow 2>/dev/null").split() if x]
+    # 빈 비밀번호 계정. /etc/shadow는 root만 읽을 수 있어 sudo로 승격해 조회한다.
+    shadow_cmd = "awk -F: '($2==\"\"){print $1}' /etc/shadow"
+    out = _run(client, shadow_cmd + " 2>/dev/null")
+    if not out:
+        out = _run(client, shadow_cmd, password=password, sudo=True)
+    empty = [x for x in out.split() if x and not x.startswith("sudo")]
     if empty:
         checks.append(_item(
             "account", f"빈 비밀번호 계정 {len(empty)}건", "critical", "fail",
@@ -440,11 +508,20 @@ def _ssh_accounts(client):
     return checks
 
 
-def _ssh_sshd(client, port):
+def _ssh_sshd(client, port, password=None):
     checks = []
+    # sshd_config는 배포판에 따라 root만 읽을 수 있어 필요 시 sudo로 승격한다.
     conf = _run(client, "cat /etc/ssh/sshd_config 2>/dev/null")
     if not conf:
-        return checks
+        conf = _run(client, "cat /etc/ssh/sshd_config", password=password, sudo=True)
+    if not conf or "sudo:" in conf[:80]:
+        return [_item(
+            "account", "SSH 설정 점검 불가", "info", "info",
+            "/etc/ssh/sshd_config 를 읽을 권한이 없어 PermitRootLogin 등을 확인하지 "
+            "못했습니다.",
+            "점검 계정에 해당 파일 읽기 권한을 주거나 sudo 사용을 허용하세요.",
+            port=int(port), ref_url=REF["ssh"],
+        )]
 
     def directive(name, default=""):
         for line in conf.splitlines():

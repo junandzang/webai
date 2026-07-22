@@ -4,7 +4,27 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}서버 관리{% endblock %}</title>
+  <meta name="csrf-token" content="{{ request.session.get('csrf', '') }}">
   <link rel="stylesheet" href="/static/style.css">
+  <script>
+    // 상태를 바꾸는 fetch 요청에 CSRF 토큰을 자동으로 붙인다.
+    (function () {
+      const meta = document.querySelector('meta[name="csrf-token"]');
+      const token = meta ? meta.content : '';
+      const origFetch = window.fetch;
+      window.fetch = function (input, init) {
+        init = init || {};
+        const method = (init.method || 'GET').toUpperCase();
+        const url = typeof input === 'string' ? input : (input && input.url) || '';
+        if (method !== 'GET' && method !== 'HEAD' && !/^https?:\/\//i.test(url)) {
+          const h = new Headers(init.headers || {});
+          h.set('X-CSRF-Token', token);
+          init.headers = h;
+        }
+        return origFetch.call(this, input, init);
+      };
+    })();
+  </script>
 </head>
 <body class="app">
   <div class="shell" id="shell">

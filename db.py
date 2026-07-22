@@ -290,6 +290,30 @@ def delete_server(server_id: int) -> bool:
             return cur.rowcount > 0
 
 
+def add_audit(actor, action, target="", detail="", ip=""):
+    """감사 로그를 남긴다. 자격증명은 절대 전달하지 않는다."""
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO audit_log (actor, action, target, detail, ip) "
+                    "VALUES (%s, %s, %s, %s, %s)",
+                    (str(actor)[:50], str(action)[:40], str(target)[:120],
+                     str(detail)[:255], str(ip)[:45]),
+                )
+    except Exception:
+        pass  # 감사 로그 실패가 기능을 막지 않도록 한다
+
+
+def list_audit(limit=200):
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT * FROM audit_log ORDER BY id DESC LIMIT %s", (int(limit),)
+            )
+            return cur.fetchall()
+
+
 # ===== 서버 자격증명 암복호화 =====
 #
 # SSH/DB 비밀번호는 평문으로 두지 않고 Fernet으로 암호화해 저장한다.

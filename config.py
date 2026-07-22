@@ -43,3 +43,8 @@ NVD_INSECURE = os.getenv("NVD_INSECURE", "") == "1"
 # 서버 SSH/DB 자격증명 암호화 키(Fernet). 비어 있으면 자격증명 저장이 비활성화된다.
 #   생성: python -c "from cryptography.fernet import Fernet;print(Fernet.generate_key().decode())"
 CRED_KEY = os.getenv("CRED_KEY", "")
+
+# SSH 호스트키 정책.
+#  기본(0): 처음 보는 호스트는 키를 기록하고 접속(TOFU), 이후 키가 바뀌면 거부.
+#  엄격(1): ssh_known_hosts에 미리 등록된 호스트만 접속 허용.
+SSH_STRICT_HOST_KEY = os.getenv("SSH_STRICT_HOST_KEY", "") == "1"

@@ -14,3 +14,6 @@ venv/
 # 에디터
 .idea/
 .vscode/
+
+# SSH 호스트키 신뢰 목록 (환경별로 다름)
+ssh_known_hosts

@@ -3,7 +3,9 @@
 실행:  python -m uvicorn app:app --reload --port 8000
 """
 
+import secrets
 import threading
+import time
 from pathlib import Path
 
 from fastapi import FastAPI, Form, Request
@@ -43,12 +45,93 @@ BASE_DIR = Path(__file__).resolve().parent
 
 SESSION_EXPIRED = "세션이 만료되었습니다. 다시 로그인해주세요."
 
+# ===== 로그인 시도 제한 (무차별 대입 방지) =====
+LOGIN_MAX_TRIES = 5          # 이 횟수를 넘기면
+LOGIN_LOCK_SECONDS = 300     # 이 시간(초) 동안 잠근다
+_login_fails = {}            # {키: [실패횟수, 마지막실패시각]}
+
+
+def _client_ip(request: Request) -> str:
+    return (request.client.host if request.client else "") or ""
+
+
+def _login_key(request: Request, username: str) -> str:
+    return f"{_client_ip(request)}|{username.lower()}"
+
+
+def _login_locked(key: str):
+    """잠겨 있으면 남은 초를 반환, 아니면 0."""
+    rec = _login_fails.get(key)
+    if not rec:
+        return 0
+    tries, last = rec
+    if tries < LOGIN_MAX_TRIES:
+        return 0
+    remain = int(LOGIN_LOCK_SECONDS - (time.time() - last))
+    if remain <= 0:
+        _login_fails.pop(key, None)
+        return 0
+    return remain
+
+
+def _login_failed(key: str):
+    tries, _last = _login_fails.get(key, (0, 0))
+    _login_fails[key] = (tries + 1, time.time())
+
+
+def _login_ok(key: str):
+    _login_fails.pop(key, None)
+
+
+# ===== CSRF =====
+# 세션에 토큰을 두고, 상태를 바꾸는 POST 요청에서 헤더/폼 값과 대조한다.
+
+
+def _csrf_token(request: Request) -> str:
+    token = request.session.get("csrf")
+    if not token:
+        token = secrets.token_urlsafe(32)
+        request.session["csrf"] = token
+    return token
+
+
+async def _csrf_ok(request: Request) -> bool:
+    sent = request.headers.get("X-CSRF-Token", "")
+    if not sent:
+        try:
+            form = await request.form()
+            sent = str(form.get("csrf_token", ""))
+        except Exception:
+            sent = ""
+    expected = request.session.get("csrf", "")
+    return bool(expected) and secrets.compare_digest(sent, expected)
+
 # servers.group_name 컬럼 길이와 맞춘다.
 GROUP_NAME_MAX = 50
 
 app = FastAPI(title="운영자 사이트")
-app.add_middleware(SessionMiddleware, secret_key=config.SESSION_SECRET)
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
+
+# CSRF: 상태를 바꾸는 POST는 X-CSRF-Token 헤더를 요구한다.
+# 화면의 모든 상태 변경은 fetch()로 이뤄지므로 헤더 방식으로 충분하다.
+# (로그인 폼은 일반 form POST라 예외 — 세션이 아직 없다)
+CSRF_EXEMPT = {"/login"}
+
+
+@app.middleware("http")
+async def csrf_guard(request: Request, call_next):
+    if request.method == "POST" and request.url.path not in CSRF_EXEMPT:
+        if not await _csrf_ok(request):
+            return JSONResponse(
+                {"ok": False, "message": "요청이 유효하지 않습니다. 새로고침 후 다시 시도하세요."},
+                status_code=403,
+            )
+    return await call_next(request)
+
+
+# SessionMiddleware를 마지막에 추가해 가장 바깥에 두어야
+# 위 csrf_guard에서 request.session을 읽을 수 있다.
+app.add_middleware(SessionMiddleware, secret_key=config.SESSION_SECRET)
 
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
@@ -91,9 +174,27 @@ def login_submit(
             status_code=400,
         )
 
+    # 무차별 대입 방지: 연속 실패 시 일정 시간 잠근다.
+    key = _login_key(request, username)
+    locked = _login_locked(key)
+    if locked:
+        db.add_audit(username, "login_locked", ip=_client_ip(request),
+                     detail=f"{locked}초 남음")
+        return templates.TemplateResponse(
+            request=request,
+            name="login.html",
+            context={
+                "error": f"로그인 시도가 많아 잠겼습니다. {locked}초 후 다시 시도하세요.",
+                "username": username,
+            },
+            status_code=429,
+        )
+
     # 계정 조회 및 비밀번호 검증
     operator = get_operator(username)
     if operator is None or not verify_password(password, operator["password_hash"]):
+        _login_failed(key)
+        db.add_audit(username, "login_fail", ip=_client_ip(request))
         return templates.TemplateResponse(
             request=request,
             name="login.html",
@@ -105,7 +206,10 @@ def login_submit(
         )
 
     # 로그인 성공: 세션 설정
+    _login_ok(key)
     request.session["username"] = operator["username"]
+    _csrf_token(request)          # 이 세션의 CSRF 토큰 발급
+    db.add_audit(operator["username"], "login", ip=_client_ip(request))
     return RedirectResponse("/dashboard", status_code=303)
 
 
@@ -276,6 +380,11 @@ def api_update_server(
             server_id, ssh_port, ssh_user, ssh_password,
             db_port, db_user, db_password,
         )
+        # 자격증명 변경은 감사 대상. 비밀번호 값 자체는 기록하지 않는다.
+        if ssh_password or db_password:
+            db.add_audit(request.session["username"], "cred_update", target=name,
+                         ip=_client_ip(request),
+                         detail=f"ssh={bool(ssh_password)} db={bool(db_password)}")
     return JSONResponse({"ok": ok, "message": message}, status_code=200 if ok else 400)
 
 
@@ -430,7 +539,7 @@ def _score_color(score):
     return "bad"
 
 
-def _start_scan(server_id: int):
+def _start_scan(server_id: int, actor: str = "", actor_ip: str = ""):
     """서버 1대 진단을 시작한다. (성공여부, 사유) 반환. 백그라운드 실행.
 
     서버에 SSH/DB 자격증명이 저장돼 있으면 계정 기반 심층 점검까지 함께 수행한다.
@@ -450,6 +559,8 @@ def _start_scan(server_id: int):
     threading.Thread(
         target=scanner.run_scan, args=(scan_id, server_id, ip, creds), daemon=True
     ).start()
+    db.add_audit(actor, "scan_start", target=server["name"], ip=actor_ip,
+                 detail="계정 점검 포함" if creds else "네트워크 스캔")
     return True, "시작"
 
 
@@ -555,9 +666,11 @@ def api_scan_bulk(request: Request, server_ids: str = Form(default="")):
             {"ok": False, "message": "진단할 서버를 선택하세요."}, status_code=400
         )
 
+    actor = request.session["username"]
+    actor_ip = _client_ip(request)
     started, skipped = [], []
     for sid in ids:
-        ok, _reason = _start_scan(sid)
+        ok, _reason = _start_scan(sid, actor, actor_ip)
         (started if ok else skipped).append(sid)
 
     return JSONResponse({

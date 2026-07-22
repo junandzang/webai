@@ -167,6 +167,21 @@ def main():
                 "ALTER TABLE scans "
                 "ADD COLUMN IF NOT EXISTS authed TINYINT(1) NOT NULL DEFAULT 0"
             )
+            # 감사 로그: 누가·언제·무엇을 했는지. 자격증명은 절대 기록하지 않는다.
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS audit_log (
+                    id       INT AUTO_INCREMENT PRIMARY KEY,
+                    actor    VARCHAR(50)  NOT NULL DEFAULT '',
+                    action   VARCHAR(40)  NOT NULL,
+                    target   VARCHAR(120) NOT NULL DEFAULT '',
+                    detail   VARCHAR(255) NOT NULL DEFAULT '',
+                    ip       VARCHAR(45)  NOT NULL DEFAULT '',
+                    at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_at (at)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                """
+            )
             # 서버별 SSH/DB 자격증명. 비밀번호는 Fernet으로 암호화해 저장한다.
             for ddl in (
                 "ADD COLUMN IF NOT EXISTS ssh_port INT NOT NULL DEFAULT 22",
