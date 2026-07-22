@@ -179,66 +179,74 @@
 
   <!-- 서버 등록/수정 팝업 -->
   <div class="modal-overlay" id="serverModal">
-    <div class="modal">
+    <div class="modal modal-wide">
       <h2 id="serverModalTitle">서버 추가</h2>
       <div class="modal-msg" id="serverMsg" role="alert"></div>
 
       <form id="serverForm" autocomplete="off">
-        <label for="f_group">그룹명</label>
-        <input type="text" id="f_group" name="group_name" list="groupList"
-               placeholder="예: WEB (새 그룹명을 입력하면 그룹이 생성됩니다)">
-        <datalist id="groupList">
-          {% for g in groups %}<option value="{{ g.group_name }}"></option>{% endfor %}
-        </datalist>
+        <div class="form-cols">
+          <div class="col">
+            <p class="cred-sec">기본 정보</p>
 
-        <label for="f_name">서버명</label>
-        <input type="text" id="f_name" name="name" placeholder="예: WEB-04">
+            <label for="f_group">그룹명</label>
+            <input type="text" id="f_group" name="group_name" list="groupList"
+                   placeholder="예: WEB (새 그룹명이면 그룹 생성)">
+            <datalist id="groupList">
+              {% for g in groups %}<option value="{{ g.group_name }}"></option>{% endfor %}
+            </datalist>
 
-        <label for="f_ip">IP</label>
-        <input type="text" id="f_ip" name="ip" placeholder="예: 10.0.1.14">
+            <label for="f_name">서버명</label>
+            <input type="text" id="f_name" name="name" placeholder="예: WEB-04">
 
-        <label for="f_os">OS</label>
-        <input type="text" id="f_os" name="os_name" placeholder="예: Ubuntu 22.04">
+            <label for="f_ip">IP</label>
+            <input type="text" id="f_ip" name="ip" placeholder="예: 10.0.1.14">
 
-        <label for="f_role">용도</label>
-        <input type="text" id="f_role" name="role" placeholder="예: 웹 서버">
+            <label for="f_os">OS</label>
+            <input type="text" id="f_os" name="os_name" placeholder="예: Ubuntu 22.04">
 
-        <label for="f_status">상태</label>
-        <select id="f_status" name="status">
-          {% for code, label in status_labels.items() %}
-          <option value="{{ code }}">{{ label }}</option>
-          {% endfor %}
-        </select>
+            <label for="f_role">용도</label>
+            <input type="text" id="f_role" name="role" placeholder="예: 웹 서버">
 
-        <p class="cred-sec">SSH 접속 정보 (보안 점검용)</p>
-        <div class="cred-grid">
-          <div>
-            <label for="f_ssh_port">포트</label>
-            <input type="text" id="f_ssh_port" name="ssh_port" value="22" inputmode="numeric">
+            <label for="f_status">상태</label>
+            <select id="f_status" name="status">
+              {% for code, label in status_labels.items() %}
+              <option value="{{ code }}">{{ label }}</option>
+              {% endfor %}
+            </select>
           </div>
-          <div>
-            <label for="f_ssh_user">ID</label>
-            <input type="text" id="f_ssh_user" name="ssh_user" placeholder="예: root" autocomplete="off">
-          </div>
-          <div>
-            <label for="f_ssh_password">Password</label>
-            <input type="password" id="f_ssh_password" name="ssh_password" autocomplete="new-password">
-          </div>
-        </div>
 
-        <p class="cred-sec">DB 접속 정보 (MySQL/MariaDB 점검용)</p>
-        <div class="cred-grid">
-          <div>
-            <label for="f_db_port">포트</label>
-            <input type="text" id="f_db_port" name="db_port" value="3306" inputmode="numeric">
-          </div>
-          <div>
-            <label for="f_db_user">ID</label>
-            <input type="text" id="f_db_user" name="db_user" placeholder="예: root" autocomplete="off">
-          </div>
-          <div>
-            <label for="f_db_password">Password</label>
-            <input type="password" id="f_db_password" name="db_password" autocomplete="new-password">
+          <div class="col">
+            <p class="cred-sec">SSH 접속 정보 (보안 점검용)</p>
+            <div class="cred-grid">
+              <div>
+                <label for="f_ssh_port">포트</label>
+                <input type="text" id="f_ssh_port" name="ssh_port" value="22" inputmode="numeric">
+              </div>
+              <div>
+                <label for="f_ssh_user">ID</label>
+                <input type="text" id="f_ssh_user" name="ssh_user" placeholder="예: root" autocomplete="off">
+              </div>
+              <div>
+                <label for="f_ssh_password">Password</label>
+                <input type="password" id="f_ssh_password" name="ssh_password" autocomplete="new-password">
+              </div>
+            </div>
+
+            <p class="cred-sec">DB 접속 정보 (MySQL/MariaDB 점검용)</p>
+            <div class="cred-grid">
+              <div>
+                <label for="f_db_port">포트</label>
+                <input type="text" id="f_db_port" name="db_port" value="3306" inputmode="numeric">
+              </div>
+              <div>
+                <label for="f_db_user">ID</label>
+                <input type="text" id="f_db_user" name="db_user" placeholder="예: root" autocomplete="off">
+              </div>
+              <div>
+                <label for="f_db_password">Password</label>
+                <input type="password" id="f_db_password" name="db_password" autocomplete="new-password">
+              </div>
+            </div>
           </div>
         </div>
 
