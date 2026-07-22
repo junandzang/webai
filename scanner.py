@@ -300,13 +300,25 @@ def run_scan(scan_id, server_id, ip, creds=None):
         # 계정 기반 심층 점검 (자격증명이 주어졌을 때만)
         authed = 0
         if creds:
+            import credaudit
             checks.extend(_run_credentialed(ip, creds))
             authed = 1
             # SSH로 정확한 OS를 확인했으면 그 값을 우선한다.
             for c in checks:
-                if c["category"] == "os" and c["title"].startswith("운영체제 확인:"):
+                if c["category"] == "os" and c["title"].startswith(credaudit.OS_OK_PREFIX):
                     scan_result["os"] = c["title"].split(":", 1)[1].strip()
                     break
+
+        # 이 서버에 실제로 접근 가능한 경로를 기록한다 (OS/DB/WEB)
+        import credaudit as _ca
+        can_os = any(c["title"].startswith(_ca.OS_OK_PREFIX) for c in checks)
+        can_db = any(c["title"].startswith(_ca.DB_OK_PREFIX) for c in checks)
+        can_web = any(
+            p["state"] == "open"
+            and (p["port"] in rules.WEB_PORTS or p.get("service", "").startswith("http"))
+            for p in scan_result["ports"]
+        )
+        db.update_server_caps(server_id, can_os, can_db, can_web)
 
         # OS를 파악했으면 서버 레코드에 반영
         if scan_result.get("os"):

@@ -151,7 +151,8 @@ def list_servers(group_name: str = None):
         "SELECT id, group_name, name, ip, os, role, status, sort_order, "
         "       ssh_port, ssh_user, db_port, db_user, "
         "       ssh_password_enc IS NOT NULL AS ssh_pw_set, "
-        "       db_password_enc IS NOT NULL AS db_pw_set "
+        "       db_password_enc IS NOT NULL AS db_pw_set, "
+        "       can_os, can_db, can_web "
         "FROM servers "
     )
     params = ()
@@ -182,7 +183,8 @@ def get_server(server_id: int):
                 "SELECT id, group_name, name, ip, os, role, status, sort_order, "
                 "       ssh_port, ssh_user, db_port, db_user, "
                 "       ssh_password_enc IS NOT NULL AS ssh_pw_set, "
-                "       db_password_enc IS NOT NULL AS db_pw_set "
+                "       db_password_enc IS NOT NULL AS db_pw_set, "
+                "       can_os, can_db, can_web "
                 "FROM servers WHERE id = %s",
                 (server_id,),
             )
@@ -421,11 +423,23 @@ def credential_status(server_id: int):
             cur.execute(
                 "SELECT ssh_port, ssh_user, db_port, db_user, "
                 "       ssh_password_enc IS NOT NULL AS ssh_pw_set, "
-                "       db_password_enc IS NOT NULL AS db_pw_set "
+                "       db_password_enc IS NOT NULL AS db_pw_set, "
+                "       can_os, can_db, can_web "
                 "FROM servers WHERE id = %s",
                 (server_id,),
             )
             return cur.fetchone() or {}
+
+
+def update_server_caps(server_id: int, can_os: bool, can_db: bool, can_web: bool):
+    """마지막 진단에서 접근에 성공한 경로(OS/DB/WEB)를 서버에 기록한다."""
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE servers SET can_os = %s, can_db = %s, can_web = %s "
+                "WHERE id = %s",
+                (int(bool(can_os)), int(bool(can_db)), int(bool(can_web)), server_id),
+            )
 
 
 def update_server_os(server_id: int, os_name: str):
@@ -649,6 +663,7 @@ def scans_overview(group_name: str = None):
         "       sv.ssh_port, sv.ssh_user, sv.db_port, sv.db_user, "
         "       sv.ssh_password_enc IS NOT NULL AS ssh_pw_set, "
         "       sv.db_password_enc IS NOT NULL AS db_pw_set, "
+        "       sv.can_os, sv.can_db, sv.can_web, "
         "       s.id AS scan_id, s.status AS scan_status, s.score, "
         "       s.crit, s.high, s.med, s.low, s.info, s.os_detected, "
         "       s.scan_source, s.finished_at "

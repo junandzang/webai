@@ -22,6 +22,11 @@ from rules import REF, _item
 CONNECT_TIMEOUT = 8
 SSH_CMD_TIMEOUT = 15
 
+# 접속 성공을 나타내는 항목 제목 접두사.
+# 스캐너가 "이 서버에 무엇으로 접근 가능한지"를 판정할 때 기준으로 쓴다.
+OS_OK_PREFIX = "운영체제 확인:"
+DB_OK_PREFIX = "DB 버전 확인:"
+
 # 로컬 전용으로 간주하는 호스트 값
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
 
@@ -52,7 +57,7 @@ def audit_mysql(host, port, user, password):
             with conn.cursor() as cur:
                 version = _scalar(cur, "SELECT VERSION() AS v", "v") or ""
                 checks.append(_item(
-                    "db", f"DB 버전 확인: {version}", "info", "pass",
+                    "db", f"{DB_OK_PREFIX} {version}", "info", "pass",
                     f"계정 점검으로 확인한 정확한 버전입니다: {version}",
                     "보안 패치가 적용된 최신 버전을 유지하세요.",
                     port=int(port), evidence=version, ref_url=REF["mysql"],
@@ -442,7 +447,7 @@ def _ssh_os(client):
     if pretty or kernel:
         label = pretty or "Linux"
         checks.append(_item(
-            "os", f"운영체제 확인: {label}", "info", "pass",
+            "os", f"{OS_OK_PREFIX} {label}", "info", "pass",
             f"계정 점검으로 확인한 정확한 OS입니다. 커널 {kernel or '미상'}.",
             "OS 보안 업데이트를 최신 상태로 유지하세요.",
             evidence=f"{osr}\nkernel: {kernel}"[:400],

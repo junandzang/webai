@@ -136,6 +136,14 @@
           <div><dt>IP</dt><dd>{{ s.ip or '-' }}</dd></div>
           <div><dt>OS</dt><dd>{{ s.os or '-' }}</dd></div>
           <div><dt>용도</dt><dd>{{ s.role or '-' }}</dd></div>
+          <div><dt>접근</dt>
+            <dd class="access-list">
+              {% if s.can_os %}<span class="acc acc-os">OS</span>{% endif %}
+              {% if s.can_db %}<span class="acc acc-db">DB</span>{% endif %}
+              {% if s.can_web %}<span class="acc acc-web">WEB</span>{% endif %}
+              {% if not (s.can_os or s.can_db or s.can_web) %}<span class="acc acc-none">-</span>{% endif %}
+            </dd>
+          </div>
         </dl>
 
         <div class="card-scan">

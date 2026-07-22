@@ -190,6 +190,10 @@ def main():
                 "ADD COLUMN IF NOT EXISTS db_port INT NOT NULL DEFAULT 3306",
                 "ADD COLUMN IF NOT EXISTS db_user VARCHAR(64) NOT NULL DEFAULT ''",
                 "ADD COLUMN IF NOT EXISTS db_password_enc VARBINARY(512) NULL",
+                # 마지막 진단에서 실제로 접근에 성공한 경로 (OS/DB/WEB)
+                "ADD COLUMN IF NOT EXISTS can_os TINYINT(1) NOT NULL DEFAULT 0",
+                "ADD COLUMN IF NOT EXISTS can_db TINYINT(1) NOT NULL DEFAULT 0",
+                "ADD COLUMN IF NOT EXISTS can_web TINYINT(1) NOT NULL DEFAULT 0",
             ):
                 cur.execute("ALTER TABLE servers " + ddl)
 
