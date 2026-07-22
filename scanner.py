@@ -74,7 +74,7 @@ def parse_nmap_xml(xml_text):
     """nmap XML을 규칙 엔진이 쓰는 dict로 변환한다."""
     root = ET.fromstring(xml_text)
     host = root.find("host")
-    result = {"reachable": False, "os": "", "ports": []}
+    result = {"reachable": False, "os": "", "ports": [], "intercepted": []}
     if host is None:
         return result
 
@@ -97,9 +97,11 @@ def parse_nmap_xml(xml_text):
                 "service": svc.get("name", "") if svc is not None else "",
                 "product": svc.get("product", "") if svc is not None else "",
                 "version": svc.get("version", "") if svc is not None else "",
+                "extrainfo": svc.get("extrainfo", "") if svc is not None else "",
                 "tunnel": svc.get("tunnel", "") if svc is not None else "",
                 "scripts": scripts,
             }
+
             result["ports"].append(entry)
             # 서비스 배너/버전에 담긴 배포판 힌트 수집 (최후 보조용)
             if svc is not None:
@@ -108,6 +110,16 @@ def parse_nmap_xml(xml_text):
                     if val:
                         os_hints.append(val)
 
+    # 스캔하는 PC의 백신/보안 프로그램이 연결을 가로채면 실제로는 닫힌 포트가
+    # 'open'으로 잡힌다. 대상 서버의 상태가 아니므로 열린 포트에서 제외한다.
+    # 판정은 (1) 존재하지 않는 IP 연결 테스트, (2) 서비스 지문 두 가지로 한다.
+    open_now = [p for p in result["ports"] if p["state"] == "open"]
+    local_ports = detect_local_interception([p["port"] for p in open_now])
+    for entry in open_now:
+        if entry["port"] in local_ports or _is_local_interception(entry):
+            entry["state"] = "intercepted"
+            result["intercepted"].append(entry)
+
     result["os"] = _detect_os(host, os_hints)
     result["os_evidence"] = _os_evidence(host)
 
@@ -115,6 +127,67 @@ def parse_nmap_xml(xml_text):
     # 실제로 스캔이 된 것으로 본다(전부 필터링되면 ports가 비어 있음).
     result["reachable"] = state == "up" and len(result["ports"]) > 0
     return result
+
+
+# 스캔 PC의 백신·보안 프로그램이 만들어내는 가짜 'open' 판정을 걸러내기 위한 표시.
+# 대표적으로 백신 메일 실드가 25/110/143 연결을 로컬에서 가로채 응답한다.
+_INTERCEPT_PRODUCTS = (
+    "avast", "avg ", "kaspersky", "eset", "bitdefender", "norton",
+    "anti-virus", "antivirus", "mail shield",
+)
+
+# 라우팅되지 않는 주소(RFC 5737 TEST-NET-1). 정상 환경이라면 어떤 포트로도
+# 연결되지 않아야 한다. 여기에 '연결이 되면' 로컬에서 가로채고 있다는 뜻이다.
+_BLACKHOLE_IP = "192.0.2.1"
+_BLACKHOLE_TIMEOUT = 2.0
+_intercept_cache = {}      # {port: bool}
+
+
+def detect_local_interception(ports):
+    """스캔 PC가 로컬에서 가로채는 포트를 가려낸다.
+
+    존재하지 않는 IP로 연결을 시도해 성공하면, 그 포트는 백신·보안 프로그램이
+    가로채고 있는 것이다. nmap의 -sV 결과에 의존하지 않으므로 버전 탐지가
+    타임아웃된 경우에도 오탐을 잡아낸다.
+    """
+    import socket
+    from concurrent.futures import ThreadPoolExecutor
+
+    todo = [p for p in set(ports) if p not in _intercept_cache]
+
+    def probe(port):
+        s = socket.socket()
+        s.settimeout(_BLACKHOLE_TIMEOUT)
+        try:
+            s.connect((_BLACKHOLE_IP, port))
+            return port, True          # 연결됨 = 로컬 가로채기
+        except Exception:
+            return port, False
+        finally:
+            s.close()
+
+    if todo:
+        try:
+            with ThreadPoolExecutor(max_workers=16) as ex:
+                for port, hit in ex.map(probe, todo):
+                    _intercept_cache[port] = hit
+        except Exception:
+            for p in todo:
+                _intercept_cache.setdefault(p, False)
+
+    return {p for p in ports if _intercept_cache.get(p)}
+
+
+def _is_local_interception(entry):
+    """이 결과가 대상 서버가 아니라 로컬 보안 프로그램의 응답인지 판단한다."""
+    extra = (entry.get("extrainfo") or "").lower()
+    # 프록시가 스스로 "대상에 연결하지 못했다"고 밝히는 경우가 가장 확실하다.
+    if "cannot connect to" in extra or "connection refused" in extra:
+        return True
+    product = (entry.get("product") or "").lower()
+    if any(m in product for m in _INTERCEPT_PRODUCTS) and "proxy" in product:
+        return True
+    return False
 
 
 def _os_evidence(host):
@@ -335,9 +408,10 @@ def run_scan(scan_id, server_id, ip, creds=None):
             if c["result"] in ("fail", "warn"):
                 counts[c["severity"]] += 1
 
-        # 접근 불가한 대상은 점수를 매기지 않는다(미진단 표시). 점검이 안 됐는데
-        # 취약이 0건이라고 100점으로 보이면 오해를 준다.
-        score = db.compute_score(checks) if scan_result.get("reachable") else None
+        # 실제로 판정된 항목이 하나도 없을 때만 '미진단'(None)으로 둔다.
+        # 네트워크 스캔이 타임아웃해도 계정 점검 결과가 있으면 점수를 낸다.
+        scored = any(c["result"] in ("pass", "fail", "warn") for c in checks)
+        score = db.compute_score(checks) if scored else None
 
         db.set_scan_done(
             scan_id,

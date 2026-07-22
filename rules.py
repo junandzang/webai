@@ -161,15 +161,37 @@ def build_checklist(scan):
     checks = []
     if not scan.get("reachable"):
         checks.append(_item(
-            "port", "대상에 접근할 수 없음", "info", "info",
-            "호스트가 응답하지 않거나 모든 포트가 필터링되어 점검을 진행할 수 없습니다.",
-            "IP·방화벽·네트워크 경로를 확인하세요.",
+            "port", "네트워크 포트 스캔 미완료", "info", "info",
+            "호스트가 응답하지 않거나, 모든 포트가 필터링되었거나, 스캔이 시간 초과되어 "
+            "포트 목록을 얻지 못했습니다. (계정 점검이 설정돼 있으면 그 결과는 아래에 "
+            "그대로 표시됩니다)",
+            "IP·방화벽·네트워크 경로를 확인하세요. 포트가 많은 서버는 스캔에 시간이 더 "
+            "걸리므로 다시 시도하면 완료되는 경우가 많습니다.",
         ))
         return checks
 
     open_ports = [p for p in scan["ports"] if p["state"] == "open"]
 
     checks.append(_check_os(scan.get("os", ""), open_ports, scan.get("os_evidence", "")))
+
+    # 스캔하는 PC의 백신이 가로챈 포트는 대상 서버의 상태가 아니므로 제외했음을 알린다.
+    intercepted = scan.get("intercepted") or []
+    if intercepted:
+        listing = ", ".join(
+            f"{p['port']}/tcp({p.get('product') or '미상'})" for p in intercepted)
+        checks.append(_item(
+            "port", f"스캔 PC의 보안 프로그램이 가로챈 포트 {len(intercepted)}건 (판정 제외)",
+            "info", "info",
+            "아래 포트는 스캔을 수행한 PC의 백신·보안 프로그램이 연결을 가로채 응답한 "
+            f"것으로, 대상 서버가 실제로 연 포트가 아닙니다: {listing}. "
+            "따라서 열린 포트로 집계하지 않았습니다.",
+            "정확한 결과를 원하면 스캔 PC에서 백신의 메일/웹 실드를 잠시 끄거나, "
+            "서버에서 `ss -lntp` 로 직접 확인하세요.",
+            evidence="\n".join(
+                f"{p['port']}/tcp {p.get('product','')} — {p.get('extrainfo','')}"
+                for p in intercepted),
+        ))
+
     checks.extend(_check_ports(open_ports))
     checks.extend(_check_web(open_ports))
     checks.extend(_check_db(open_ports))
