@@ -136,6 +136,21 @@ app.add_middleware(SessionMiddleware, secret_key=config.SESSION_SECRET)
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 
+def asset_url(filename: str) -> str:
+    """정적 파일 URL에 파일 수정시각을 버전으로 붙인다.
+
+    파일이 바뀌면 URL이 달라져 브라우저가 새로 받는다(캐시 무효화).
+    """
+    try:
+        ver = int((BASE_DIR / "static" / filename).stat().st_mtime)
+    except OSError:
+        ver = 0
+    return f"/static/{filename}?v={ver}"
+
+
+templates.env.globals["asset_url"] = asset_url
+
+
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request):
     if request.session.get("username"):

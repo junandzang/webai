@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}서버 관리{% endblock %}</title>
   <meta name="csrf-token" content="{{ request.session.get('csrf', '') }}">
-  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="{{ asset_url('style.css') }}">
   <script>
     // 상태를 바꾸는 fetch 요청에 CSRF 토큰을 자동으로 붙인다.
     (function () {
