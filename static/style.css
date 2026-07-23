@@ -1021,17 +1021,18 @@ button:disabled:hover {
 
 /* ===== 리포트: 담당자 위험도(레벨) 조정 ===== */
 .lvl-box { position: relative; display: inline-flex; align-items: center; }
+/* 레벨 조정 컨트롤은 기존 대비 약 50% 축소 (컴팩트) */
 .lvl-btn {
-  padding: 3px 9px; font-size: 11.5px; font-weight: 600; white-space: nowrap;
-  border: 1px solid var(--line); border-radius: 6px;
+  padding: 1px 5px; font-size: 9px; font-weight: 600; line-height: 1.4; white-space: nowrap;
+  border: 1px solid var(--line); border-radius: 4px;
   background: #fff; color: var(--muted); cursor: pointer;
 }
 .lvl-btn:hover, .lvl-btn.open { background: var(--accent-soft); border-color: #cfe0fd; color: var(--accent-dark); }
 .lvl-select {
-  margin: 0 0 0 6px; padding: 5px 8px; font-size: 12.5px;
-  border: 1px solid var(--accent); border-radius: 6px; background: #fff;
+  margin: 0 0 0 4px; padding: 1px 4px; font-size: 9px; height: auto; line-height: 1.4;
+  border: 1px solid var(--accent); border-radius: 4px; background: #fff;
 }
 .lvl-adjusted {
-  font-size: 10.5px; font-weight: 700; color: #7c3aed;
-  background: #f3e8ff; border: 1px solid #e9d5ff; border-radius: 4px; padding: 1px 6px;
+  font-size: 8.5px; font-weight: 700; color: #7c3aed;
+  background: #f3e8ff; border: 1px solid #e9d5ff; border-radius: 3px; padding: 0 4px;
 }
