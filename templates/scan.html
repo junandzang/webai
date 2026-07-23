@@ -30,13 +30,13 @@
 {% else %}
   <section class="stats" id="summaryCards">
     <div class="stat"><p class="stat-label">심각</p>
-      <p class="stat-value down">{{ scan.crit }}</p></div>
+      <p class="stat-value down" id="sumCritical">{{ scan.crit }}</p></div>
     <div class="stat"><p class="stat-label">높음</p>
-      <p class="stat-value" style="color:#ea580c">{{ scan.high }}</p></div>
+      <p class="stat-value" style="color:#ea580c" id="sumHigh">{{ scan.high }}</p></div>
     <div class="stat"><p class="stat-label">보통</p>
-      <p class="stat-value warn">{{ scan.med }}</p></div>
+      <p class="stat-value warn" id="sumMed">{{ scan.med }}</p></div>
     <div class="stat"><p class="stat-label">낮음</p>
-      <p class="stat-value" style="color:#0891b2">{{ scan.low }}</p></div>
+      <p class="stat-value" style="color:#0891b2" id="sumLow">{{ scan.low }}</p></div>
   </section>
 
   <section class="panel">
@@ -64,11 +64,23 @@
       <h3 class="check-cat">{{ category_label.get(cat, cat) }}
         <span class="check-cat-count">{{ items | length }}</span></h3>
       {% for c in items %}
-      <div class="check-row result-{{ c.result }} sev-{{ c.severity }}">
+      <div class="check-row result-{{ c.result }} sev-{{ c.severity }}" data-check-id="{{ c.id }}">
         <div class="check-main">
           <span class="sev-badge sev-{{ c.severity }}">{{ severity_label.get(c.severity, c.severity) }}</span>
           <span class="check-title">{{ c.title }}</span>
+          {% if c.overridden %}<span class="lvl-adjusted" title="원래 진단: {{ severity_label.get(c.orig_severity, c.orig_severity) }}">조정됨</span>{% endif %}
           <span class="result-tag result-{{ c.result }}">{{ result_label.get(c.result, c.result) }}</span>
+          <span class="lvl-box">
+            <button type="button" class="lvl-btn" title="위험도 조정">레벨 조정 ▾</button>
+            <select class="lvl-select" data-orig="{{ c.orig_severity }}" hidden>
+              <option value="critical" {{ 'selected' if c.severity=='critical' }}>심각</option>
+              <option value="high" {{ 'selected' if c.severity=='high' }}>높음</option>
+              <option value="medium" {{ 'selected' if c.severity=='medium' }}>보통</option>
+              <option value="low" {{ 'selected' if c.severity=='low' }}>낮음</option>
+              <option value="info" {{ 'selected' if c.severity=='info' }}>정보</option>
+              <option value="">원래대로</option>
+            </select>
+          </span>
         </div>
         {% if c.detail %}<p class="check-detail">{{ c.detail }}</p>{% endif %}
         {% if c.cve_ids %}<p class="check-cve">관련 CVE: {{ c.cve_ids }}</p>{% endif %}
@@ -134,5 +146,59 @@
   if (scanStatus === 'queued' || scanStatus === 'running') {
     pollUntilDone(serverId);
   }
+
+  /* ===== 담당자 위험도(레벨) 조정 ===== */
+  const SEV_KO = { critical: '심각', high: '높음', medium: '보통', low: '낮음', info: '정보' };
+
+  // '레벨 조정' 버튼 → 셀렉트 표시/숨김
+  document.querySelectorAll('.lvl-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const sel = btn.parentElement.querySelector('.lvl-select');
+      const show = sel.hidden;
+      sel.hidden = !show;
+      btn.classList.toggle('open', show);
+      if (show) sel.focus();
+    });
+  });
+
+  document.querySelectorAll('.lvl-select').forEach(sel => {
+    sel.addEventListener('change', async () => {
+      const row = sel.closest('.check-row');
+      const id = row.dataset.checkId;
+      const level = sel.value;                 // '' 이면 원래대로
+      const body = new URLSearchParams({ level });
+      try {
+        const res = await fetch(`/api/checks/${id}/level`, { method: 'POST', body });
+        const j = await res.json();
+        if (!j.ok) { alert(j.message || '변경 실패'); return; }
+
+        // 배지·행 색상 즉시 반영
+        const eff = level || sel.dataset.orig;
+        const badge = row.querySelector('.sev-badge');
+        badge.className = 'sev-badge sev-' + eff;
+        badge.textContent = SEV_KO[eff] || eff;
+        row.className = row.className.replace(/sev-\w+/, 'sev-' + eff);
+        // 조정 표시
+        let tag = row.querySelector('.lvl-adjusted');
+        const changed = level && level !== sel.dataset.orig;
+        if (changed && !tag) {
+          tag = document.createElement('span');
+          tag.className = 'lvl-adjusted';
+          badge.after(tag);
+        }
+        if (tag) {
+          if (changed) { tag.textContent = '조정됨'; tag.title = '원래 진단: ' + (SEV_KO[sel.dataset.orig]||''); }
+          else tag.remove();
+        }
+        // 상단 요약 카드 갱신
+        const c = j.counts || {};
+        const set = (elId, v) => { const e = document.getElementById(elId); if (e && v != null) e.textContent = v; };
+        set('sumCritical', c.critical); set('sumHigh', c.high);
+        set('sumMed', c.med); set('sumLow', c.low);
+        sel.hidden = true;
+        sel.parentElement.querySelector('.lvl-btn').classList.remove('open');
+      } catch (e) { alert('요청 처리 중 오류가 발생했습니다.'); }
+    });
+  });
 </script>
 {% endblock %}

@@ -645,16 +645,71 @@ def severity_totals():
 
 
 def get_scan_checks(scan_id: int):
-    """스캔의 체크리스트 항목을 심각도 높은 순으로 반환한다."""
+    """스캔의 체크리스트 항목을 (조정된) 심각도 높은 순으로 반환한다.
+
+    각 항목에 effective severity('severity' 필드를 담당자 조정값으로 덮어씀)와
+    원래 진단값('orig_severity'), 조정 여부('overridden')를 붙인다.
+    """
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT * FROM scan_checks WHERE scan_id = %s "
-                "ORDER BY FIELD(severity,'critical','high','medium','low','info'), "
+                "SELECT *, "
+                "  COALESCE(severity_override, severity) AS eff_severity "
+                "FROM scan_checks WHERE scan_id = %s "
+                "ORDER BY FIELD(COALESCE(severity_override, severity),"
+                "               'critical','high','medium','low','info'), "
                 "         FIELD(result,'fail','warn','info','pass'), id",
                 (scan_id,),
             )
-            return cur.fetchall()
+            rows = cur.fetchall()
+    for r in rows:
+        r["orig_severity"] = r["severity"]
+        r["overridden"] = bool(r.get("severity_override"))
+        # 화면·집계는 조정값을 우선한다.
+        r["severity"] = r["eff_severity"]
+    return rows
+
+
+def set_check_severity(check_id: int, level):
+    """체크 항목의 위험도를 담당자가 조정한다. level이 빈 값이면 원복.
+
+    (성공여부, scan_id) 를 반환한다. 조정 후 스캔 점수·집계를 다시 계산한다.
+    """
+    level = (level or "").strip().lower()
+    if level and level not in SEVERITY_PENALTY:
+        return False, None
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT scan_id FROM scan_checks WHERE id = %s", (check_id,))
+            row = cur.fetchone()
+            if not row:
+                return False, None
+            scan_id = row["scan_id"]
+            cur.execute(
+                "UPDATE scan_checks SET severity_override = %s WHERE id = %s",
+                (level or None, check_id),
+            )
+    recompute_scan(scan_id)
+    return True, scan_id
+
+
+def recompute_scan(scan_id: int):
+    """조정된 위험도를 반영해 스캔의 심각도 집계·점수를 다시 계산한다."""
+    checks = get_scan_checks(scan_id)   # severity가 이미 조정값으로 덮여 있음
+    counts = {"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0}
+    for c in checks:
+        if c["result"] in ("fail", "warn"):
+            counts[c["severity"]] = counts.get(c["severity"], 0) + 1
+    scored = any(c["result"] in ("pass", "fail", "warn") for c in checks)
+    score = compute_score(checks) if scored else None
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE scans SET crit=%s, high=%s, med=%s, low=%s, info=%s, "
+                "score=%s WHERE id=%s",
+                (counts["critical"], counts["high"], counts["medium"],
+                 counts["low"], counts["info"], score, scan_id),
+            )
 
 
 # ===== SolidStep(8100) UI 전용 조회 =====

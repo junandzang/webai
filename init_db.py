@@ -157,6 +157,11 @@ def main():
                 "ALTER TABLE scan_checks "
                 "ADD COLUMN IF NOT EXISTS ref_url VARCHAR(255) DEFAULT ''"
             )
+            # 담당자가 조정한 위험도(레벨). 비어 있으면 원래 진단값을 쓴다.
+            cur.execute(
+                "ALTER TABLE scan_checks "
+                "ADD COLUMN IF NOT EXISTS severity_override VARCHAR(12) NULL"
+            )
             # 점수(0~100) 컬럼. 자산 점수 표시에 사용한다.
             cur.execute(
                 "ALTER TABLE scans "

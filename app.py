@@ -628,6 +628,35 @@ def api_scan_credentialed(
     )
 
 
+@app.post("/api/checks/{check_id}/level")
+def api_set_check_level(request: Request, check_id: int, level: str = Form(default="")):
+    """리포트의 검사 항목 위험도를 담당자가 조정한다.
+
+    level: critical|high|medium|low|info, 또는 빈 값이면 원래 진단값으로 복원.
+    조정하면 해당 스캔의 점수·요약이 다시 계산된다(해당 스캔에만 적용).
+    """
+    if not request.session.get("username"):
+        return JSONResponse({"ok": False, "message": SESSION_EXPIRED}, status_code=401)
+
+    ok, scan_id = db.set_check_severity(check_id, level)
+    if not ok:
+        return JSONResponse(
+            {"ok": False, "message": "위험도 값이 올바르지 않습니다."}, status_code=400
+        )
+
+    scan = db.get_scan(scan_id) if scan_id else None
+    db.add_audit(request.session["username"], "level_change",
+                 target=f"scan#{scan_id} check#{check_id}",
+                 ip=_client_ip(request), detail=f"level={level or 'reset'}")
+    return JSONResponse({
+        "ok": True,
+        "message": "위험도를 변경했습니다.",
+        "score": scan["score"] if scan else None,
+        "counts": {"critical": scan["crit"], "high": scan["high"], "med": scan["med"],
+                   "low": scan["low"]} if scan else {},
+    })
+
+
 @app.get("/diagnosis", response_class=HTMLResponse)
 def diagnosis(request: Request):
     if not request.session.get("username"):
